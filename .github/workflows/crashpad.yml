@@ -232,6 +232,11 @@ jobs:
           done
           cd ..
 
+      - name: Get current date
+        id: current-date
+        run: |
+          echo "date=$(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_OUTPUT
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -286,7 +291,7 @@ jobs:
             
             ---
             **Build Details:**
-            - **Build Date**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+            - **Build Date**: ${{ steps.current-date.outputs.date }}
             - **Crashpad Commit**: ${{ steps.crashpad-version.outputs.commit }}
             - **Source Repository**: https://github.com/${{ github.repository }}
             - **Workflow Run**: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
