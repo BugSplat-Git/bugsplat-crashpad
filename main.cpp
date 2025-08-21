@@ -138,28 +138,26 @@ bool initializeCrashpad(std::string dbName, std::string appName, std::string app
 #ifdef _WIN32
     // Register WER module after starting the handler
     if (success) {
-        std::string werDllPath = exeDir + "/crashpad_wer.dll";
+        std::string werDllPath = exeDir + "\\crashpad_wer.dll";
         std::cout << "Looking for Crashpad WER DLL at: " << werDllPath << std::endl;
         
         if (std::filesystem::exists(werDllPath)) {
             std::cout << "Crashpad WER DLL found, registering with Crashpad..." << std::endl;
+
             std::wstring werDllPathW(werDllPath.begin(), werDllPath.end());
             if (client.RegisterWerModule(werDllPathW)) {
                 std::cout << "Successfully registered WER module: " << werDllPath << std::endl;
-                std::cout << "WER callbacks are now active for enhanced crash detection!" << std::endl;
             } else {
-                std::cerr << "❌ Failed to register WER module: " << werDllPath << std::endl;
+                std::cerr << "Failed to register WER module: " << werDllPath << std::endl;
             }
         } else {
-            std::cout << "⚠️  Crashpad WER DLL not found - continuing without WER integration" << std::endl;
+            std::cout << "Crashpad WER DLL not found - continuing without WER integration" << std::endl;
         }
     }
 #endif
 
     return success;
 }
-
-
 
 // Struct to manage library handle and provide RAII cleanup
 struct LibraryHandle
@@ -243,16 +241,10 @@ crash_func_t loadCrashFunction(const std::string& functionName)
     return crash_func;
 }
 
-// Convenience function to load the default crash function (null pointer dereference)
-crash_func_t loadCrashFunction()
-{
-    return loadCrashFunction("crash");
-}
-
 // Create some dummy frames for a more interesting call stack
 void func2()
 {
-    std::cout << "In func2, loading library and about to crash...\n";
+    std::cout << "In func2, loading library and about to crash..." << std::endl;
 
     // ========================================
     // CRASH TYPE SELECTION
@@ -277,29 +269,25 @@ void func2()
         return;
     }
 
-    std::cout << "About to call crash function...\n";
-    
-    // Call the selected crash function
+    std::cout << "About to call crash function..." << std::endl;
     crash_func();
-
-    // We should never reach here
 }
 
 void func1()
 {
-    std::cout << "In func1, calling func2...\n";
+    std::cout << "In func1, calling func2..." << std::endl;
     func2();
 }
 
 void func0()
 {
-    std::cout << "In func0, calling func1...\n";
+    std::cout << "In func0, calling func1..." << std::endl;
     func1();
 }
 
 void generateExampleCallstackAndCrash()
 {
-    std::cout << "Starting call chain...\n";
+    std::cout << "Starting call chain..." << std::endl;
     func0();
 }
 

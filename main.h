@@ -5,7 +5,7 @@
 
 // BugSplat Configuration
 // Replace BUGSPLAT_DATABASE with your database name from your BugSplat dashboard
-#define BUGSPLAT_DATABASE "fred"
+//#define BUGSPLAT_DATABASE "fred"
 #ifndef BUGSPLAT_DATABASE
 #error "BUGSPLAT_DATABASE must be defined. Please set it to your database name from your BugSplat dashboard."
 #endif
@@ -20,12 +20,10 @@ typedef void (*crash_func_t)(void);
 // Function declarations
 std::string getExecutableDir();
 bool initializeCrashpad(std::string dbName, std::string appName, std::string appVersion);
-crash_func_t loadCrashFunction();
 crash_func_t loadCrashFunction(const std::string& functionName);
 void generateExampleCallstackAndCrash();
 void func0();
 void func1();
 void func2();
-
 
 #endif // MAIN_H 
