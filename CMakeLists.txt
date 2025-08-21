@@ -122,22 +122,7 @@ else() # Linux
         SOVERSION 2)
 endif()
 
-# Build the WER callback DLL (Windows only)
-if(WIN32)
-    add_library(werCallback SHARED wer.cpp wer.h wer.def)
-    set_target_properties(werCallback PROPERTIES 
-        OUTPUT_NAME "wer"
-        LINK_FLAGS "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/wer.def"
-    )
-    # Link with Crashpad libraries that contain WER functionality
-    target_link_libraries(werCallback 
-        ${CRASHPAD_OUT_DIR}/obj/handler/handler.lib
-        ${CRASHPAD_OUT_DIR}/obj/util/util.lib
-        ${CRASHPAD_OUT_DIR}/obj/third_party/mini_chromium/mini_chromium/base/base.lib
-        wer.lib
-    )
-    target_compile_definitions(werCallback PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-endif()
+
 
 # Add executable
 add_executable(MyCMakeCrasher main.cpp)
@@ -181,6 +166,15 @@ add_custom_command(TARGET MyCMakeCrasher POST_BUILD
     ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/crashpad_handler${CMAKE_EXECUTABLE_SUFFIX}
 )
 
+# Copy Crashpad's WER callback DLL to build directory as wer.dll (Windows only)
+if(WIN32)
+    add_custom_command(TARGET MyCMakeCrasher POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+        ${CRASHPAD_OUT_DIR}/crashpad_wer.dll
+        ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/wer.dll
+    )
+endif()
+
 # Create attachment.txt in the build directory
 add_custom_command(TARGET MyCMakeCrasher POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo "BugSplat rocks!" > ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/attachment.txt
@@ -192,12 +186,6 @@ if(WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy
         $<TARGET_FILE:crash>
         ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/$<TARGET_FILE_NAME:crash>
-    )
-    # Copy the WER callback DLL to the build directory
-    add_custom_command(TARGET werCallback POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy
-        $<TARGET_FILE:werCallback>
-        ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/$<TARGET_FILE_NAME:werCallback>
     )
 elseif(APPLE)
     add_custom_command(TARGET crash POST_BUILD
@@ -247,18 +235,18 @@ endif()
 # Install targets
 install(TARGETS MyCMakeCrasher DESTINATION bin)
 install(TARGETS crash DESTINATION bin)
-if(WIN32)
-    install(TARGETS werCallback DESTINATION bin)
-endif()
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/crashpad_handler${CMAKE_EXECUTABLE_SUFFIX} DESTINATION bin)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/attachment.txt DESTINATION bin)
+if(WIN32)
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/wer.dll DESTINATION bin)
+endif()
 
 # Symbol upload target - updated to use platform-specific scripts
 if(WIN32)
   add_custom_target(upload_symbols ALL
     COMMAND powershell -ExecutionPolicy Bypass -File 
             ${CMAKE_CURRENT_SOURCE_DIR}/scripts/upload_symbols.ps1
-    DEPENDS MyCMakeCrasher crash werCallback
+    DEPENDS MyCMakeCrasher crash
     COMMENT "Uploading symbols to BugSplat"
   )
 elseif(APPLE)
