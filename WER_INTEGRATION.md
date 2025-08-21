@@ -37,12 +37,12 @@ The `crashpad_wer.dll` must be registered in the Windows registry under one of t
 
 ### System-Wide (Requires Administrator Privileges)
 ```
-Computer\HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\RuntimeExceptionHelperModules
+Computer\HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\RuntimeExceptionHandlerModules
 ```
 
 ### User-Specific (No Admin Required)
 ```
-Computer\HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\Windows Error Reporting\RuntimeExceptionHelperModules
+Computer\HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\Windows Error Reporting\RuntimeExceptionHandlerModules
 ```
 
 **Registry Entry Format:**
@@ -65,7 +65,7 @@ The `createWerRegistryKey()` function handles Windows registry setup:
 
 ```cpp
 bool createWerRegistryKey(const std::string& dllPath) {
-    const char* registryPath = "SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\RuntimeExceptionHelperModules";
+    const char* registryPath = "SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\RuntimeExceptionHandlerModules";
     HKEY hKey;
     
     // Open/create the registry key under HKEY_CURRENT_USER
