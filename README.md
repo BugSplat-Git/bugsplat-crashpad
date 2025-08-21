@@ -117,11 +117,10 @@ The build scripts will automatically fetch and build Crashpad using `depot_tools
 
 ## Testing Crash Reporting 🧪
 
-The application will crash immediately upon launch to demonstrate the crash reporting functionality. Crashes will be automatically uploaded to BugSplat. You can test various types of crashes by commenting/uncommenting calls to `loadCrashFunction` in [main.cpp](./main.cpp). 
-
-
 > [!NOTE]
 > To configure your Windows app to catch stack buffer overruns please see the [WER](https://github.com/BugSplat-Git/bugsplat-crashpad/wiki/WER) page in this repo's Wiki.
+
+The application will crash immediately upon launch to demonstrate the crash reporting functionality. Crashes will be automatically uploaded to BugSplat. You can test various types of crashes by commenting/uncommenting calls to `loadCrashFunction` in [main.cpp](./main.cpp). 
 
 ```cpp
 // ========================================
