@@ -8,23 +8,16 @@
 #include <windows.h>
 #include "windows.h"
 #elif defined(__APPLE__)
-#include <mach-o/dyld.h>
 #include <dlfcn.h>
-#include <unistd.h>
-#include <string.h>
-#include <climits>
 #else
 #include <dlfcn.h>
-#include <unistd.h>
-#include <string.h>
 #endif
 
 #include "client/crashpad_client.h"
 #include "client/crash_report_database.h"
 #include "client/settings.h"
 #include "main.h"
-
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
+#include "paths.h"
 
 using namespace crashpad;
 using namespace std;
@@ -97,49 +90,6 @@ void generateExampleCallstackAndCrash()
     func0();
 }
 
-// Function to get the executable directory
-std::string getExecutableDir()
-{
-#ifdef _WIN32
-    char path[MAX_PATH];
-    GetModuleFileNameA(NULL, path, MAX_PATH);
-    std::string pathStr(path);
-    size_t lastBackslash = pathStr.find_last_of('\\');
-    if (lastBackslash != std::string::npos)
-    {
-        return pathStr.substr(0, lastBackslash);
-    }
-    return "";
-#elif defined(__APPLE__)
-    char path[PATH_MAX];
-    uint32_t size = sizeof(path);
-    if (_NSGetExecutablePath(path, &size) == 0)
-    {
-        std::string pathStr(path);
-        size_t lastSlash = pathStr.find_last_of('/');
-        if (lastSlash != std::string::npos)
-        {
-            return pathStr.substr(0, lastSlash);
-        }
-    }
-    return "";
-#else // Linux
-    char pBuf[FILENAME_MAX];
-    int len = sizeof(pBuf);
-    int bytes = MIN(readlink("/proc/self/exe", pBuf, len), len - 1);
-    if (bytes >= 0)
-    {
-        pBuf[bytes] = '\0';
-    }
-
-    char *lastForwardSlash = strrchr(&pBuf[0], '/');
-    if (lastForwardSlash == NULL)
-        return "";
-    *lastForwardSlash = '\0';
-
-    return pBuf;
-#endif
-}
 
 // Function to initialize Crashpad with BugSplat integration
 bool initializeCrashpad(std::string dbName, std::string appName, std::string appVersion)
@@ -238,34 +188,6 @@ bool initializeCrashpad(std::string dbName, std::string appName, std::string app
 
     return success;
 }
-
-// Struct to manage library handle and provide RAII cleanup
-struct LibraryHandle
-{
-#ifdef _WIN32
-    HMODULE handle;
-#else
-    void *handle;
-#endif
-
-    LibraryHandle() : handle(nullptr) {}
-
-    ~LibraryHandle()
-    {
-        if (handle)
-        {
-#ifdef _WIN32
-            FreeLibrary(handle);
-#else
-            dlclose(handle);
-#endif
-        }
-    }
-
-    // Non-copyable
-    LibraryHandle(const LibraryHandle &) = delete;
-    LibraryHandle &operator=(const LibraryHandle &) = delete;
-};
 
 // Function to load crash library and return specific crash function pointer
 crash_func_t loadCrashFunction(const std::string& functionName)
