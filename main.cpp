@@ -6,6 +6,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <werapi.h>
 #elif defined(__APPLE__)
 #include <mach-o/dyld.h>
 #include <dlfcn.h>
@@ -30,14 +31,31 @@ using namespace std;
 
 int main()
 {
+    // Initialize Crashpad crash reporting
     if (!initializeCrashpad(BUGSPLAT_DATABASE, BUGSPLAT_APP_NAME, BUGSPLAT_APP_VERSION))
     {
         std::cerr << "Failed to initialize Crashpad" << std::endl;
         return 1;
     }
+    
+#ifdef _WIN32
+    // Register WER callbacks on Windows to catch exceptions Crashpad might miss
+    if (!registerWERCallbacks()) {
+        std::cout << "Warning: Failed to register WER callbacks. " 
+                  << "Some crash types may not be reported." << std::endl;
+    }
+    
+    // Set up cleanup for WER callbacks
+    std::atexit([]() {
+        unregisterWERCallbacks();
+    });
+#endif
 
     std::cout << "Hello, World!" << std::endl;
     std::cout << "Crashpad initialized successfully!" << std::endl;
+#ifdef _WIN32
+    std::cout << "WER callbacks registered for enhanced crash detection!" << std::endl;
+#endif
     std::cout << "Generating crash..." << std::endl;
 
     generateExampleCallstackAndCrash();
@@ -135,6 +153,60 @@ bool initializeCrashpad(std::string dbName, std::string appName, std::string app
 
     return success;
 }
+
+#ifdef _WIN32
+// Function to register WER callbacks on Windows
+bool registerWERCallbacks() {
+    std::string exeDir = getExecutableDir();
+    std::string werCallbackPath = exeDir + "/wer.dll";
+    
+    // Check if WER callback DLL exists
+    if (!std::filesystem::exists(werCallbackPath)) {
+        std::cerr << "WER callback DLL not found at: " << werCallbackPath << std::endl;
+        return false;
+    }
+    
+    // Convert to wide string for Windows API
+    std::wstring werCallbackPathW(werCallbackPath.begin(), werCallbackPath.end());
+    
+    // Register the WER callback module
+    HRESULT hr = WerRegisterRuntimeExceptionModule(
+        werCallbackPathW.c_str(),  // Path to our WER callback DLL
+        nullptr                    // Context pointer (not used)
+    );
+    
+    if (SUCCEEDED(hr)) {
+        std::cout << "Successfully registered WER callback: " << werCallbackPath << std::endl;
+        return true;
+    } else {
+        std::cerr << "Failed to register WER callback. HRESULT: 0x" 
+                  << std::hex << hr << std::dec << std::endl;
+        return false;
+    }
+}
+
+// Function to unregister WER callbacks on Windows
+void unregisterWERCallbacks() {
+    std::string exeDir = getExecutableDir();
+    std::string werCallbackPath = exeDir + "/wer.dll";
+    
+    // Convert to wide string for Windows API
+    std::wstring werCallbackPathW(werCallbackPath.begin(), werCallbackPath.end());
+    
+    // Unregister the WER callback module
+    HRESULT hr = WerUnregisterRuntimeExceptionModule(
+        werCallbackPathW.c_str(),  // Path to our WER callback DLL
+        nullptr                    // Context pointer (not used)
+    );
+    
+    if (SUCCEEDED(hr)) {
+        std::cout << "Successfully unregistered WER callback" << std::endl;
+    } else {
+        std::cerr << "Failed to unregister WER callback. HRESULT: 0x" 
+                  << std::hex << hr << std::dec << std::endl;
+    }
+}
+#endif
 
 // Struct to manage library handle and provide RAII cleanup
 struct LibraryHandle
@@ -235,10 +307,10 @@ void func2()
     // Uncomment ONE of the following crash types to test different scenarios:
     
     // 1. NULL POINTER DEREFERENCE (Crashpad handles this well)
-    crash_func_t crash_func = loadCrashFunction("crash");
+    // crash_func_t crash_func = loadCrashFunction("crash");
     
-    // 2. STACK OVERFLOW (WER catches this better on Windows)
-    // crash_func_t crash_func = loadCrashFunction("crashStackOverflow");
+    // 2. STACK OVERFLOW (WER catches this better on Windows) - CURRENTLY SELECTED
+    crash_func_t crash_func = loadCrashFunction("crashStackOverflow");
     
     // 3. ACCESS VIOLATION (Both can catch, but WER might provide better details)
     // crash_func_t crash_func = loadCrashFunction("crashAccessViolation");

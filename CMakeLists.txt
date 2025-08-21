@@ -87,6 +87,11 @@ if(WIN32)
         ${CRASHPAD_OUT_DIR}/obj/util/util.lib
         ${CRASHPAD_OUT_DIR}/obj/third_party/mini_chromium/mini_chromium/base/base.lib
     )
+    # Add WER-specific libraries for Windows
+    set(CRASHPAD_WER_LIBRARIES
+        ${CRASHPAD_OUT_DIR}/obj/handler/win/wer/crashpad_wer.lib
+        wer.lib
+    )
     set(CRASHPAD_HANDLER ${CRASHPAD_OUT_DIR}/crashpad_handler.exe)
 elseif(APPLE)
     set(CRASHPAD_LIBRARIES
@@ -120,6 +125,17 @@ else() # Linux
         OUTPUT_NAME "crash" 
         VERSION 2.0.0 
         SOVERSION 2)
+endif()
+
+# Build the WER callback DLL (Windows only)
+if(WIN32)
+    add_library(wer SHARED wer.cpp wer.h wer.def)
+    set_target_properties(wer PROPERTIES 
+        OUTPUT_NAME "wer"
+        LINK_FLAGS "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/wer.def"
+    )
+    target_link_libraries(wer ${CRASHPAD_WER_LIBRARIES})
+    target_compile_definitions(wer PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
 # Add executable
@@ -176,6 +192,12 @@ if(WIN32)
         $<TARGET_FILE:crash>
         ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/$<TARGET_FILE_NAME:crash>
     )
+    # Copy the WER callback DLL to the build directory
+    add_custom_command(TARGET wer POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+        $<TARGET_FILE:wer>
+        ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/$<TARGET_FILE_NAME:wer>
+    )
 elseif(APPLE)
     add_custom_command(TARGET crash POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
@@ -224,6 +246,9 @@ endif()
 # Install targets
 install(TARGETS MyCMakeCrasher DESTINATION bin)
 install(TARGETS crash DESTINATION bin)
+if(WIN32)
+    install(TARGETS wer DESTINATION bin)
+endif()
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/crashpad_handler${CMAKE_EXECUTABLE_SUFFIX} DESTINATION bin)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/attachment.txt DESTINATION bin)
 
@@ -232,7 +257,7 @@ if(WIN32)
   add_custom_target(upload_symbols ALL
     COMMAND powershell -ExecutionPolicy Bypass -File 
             ${CMAKE_CURRENT_SOURCE_DIR}/scripts/upload_symbols.ps1
-    DEPENDS MyCMakeCrasher crash
+    DEPENDS MyCMakeCrasher crash wer
     COMMENT "Uploading symbols to BugSplat"
   )
 elseif(APPLE)
