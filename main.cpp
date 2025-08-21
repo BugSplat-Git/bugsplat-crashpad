@@ -164,8 +164,8 @@ struct LibraryHandle
     LibraryHandle &operator=(const LibraryHandle &) = delete;
 };
 
-// Function to load crash library and return crash function pointer
-crash_func_t loadCrashFunction()
+// Function to load crash library and return specific crash function pointer
+crash_func_t loadCrashFunction(const std::string& functionName)
 {
     std::string exeDir = getExecutableDir();
 
@@ -187,11 +187,11 @@ crash_func_t loadCrashFunction()
         return nullptr;
     }
 
-    // Get the crash function
-    crash_func_t crash_func = (crash_func_t)GetProcAddress(handle, "crash");
+    // Get the crash function by name
+    crash_func_t crash_func = (crash_func_t)GetProcAddress(handle, functionName.c_str());
     if (!crash_func)
     {
-        std::cerr << "Failed to get crash function: " << GetLastError() << std::endl;
+        std::cerr << "Failed to get crash function '" << functionName << "': " << GetLastError() << std::endl;
         FreeLibrary(handle);
         return nullptr;
     }
@@ -203,13 +203,13 @@ crash_func_t loadCrashFunction()
         return nullptr;
     }
 
-    // Get the crash function
+    // Get the crash function by name
     dlerror(); // Clear any existing error
-    crash_func_t crash_func = (crash_func_t)dlsym(handle, "crash");
+    crash_func_t crash_func = (crash_func_t)dlsym(handle, functionName.c_str());
     const char *dlsym_error = dlerror();
     if (dlsym_error)
     {
-        std::cerr << "Failed to get crash function: " << dlsym_error << std::endl;
+        std::cerr << "Failed to get crash function '" << functionName << "': " << dlsym_error << std::endl;
         dlclose(handle);
         return nullptr;
     }
@@ -218,20 +218,43 @@ crash_func_t loadCrashFunction()
     return crash_func;
 }
 
+// Convenience function to load the default crash function (null pointer dereference)
+crash_func_t loadCrashFunction()
+{
+    return loadCrashFunction("crash");
+}
+
 // Create some dummy frames for a more interesting call stack
 void func2()
 {
     std::cout << "In func2, loading library and about to crash...\n";
 
-    // Load crash function from library
-    crash_func_t crash_func = loadCrashFunction();
+    // ========================================
+    // CRASH TYPE SELECTION
+    // ========================================
+    // Uncomment ONE of the following crash types to test different scenarios:
+    
+    // 1. NULL POINTER DEREFERENCE (Crashpad handles this well)
+    crash_func_t crash_func = loadCrashFunction("crash");
+    
+    // 2. STACK OVERFLOW (WER catches this better on Windows)
+    // crash_func_t crash_func = loadCrashFunction("crashStackOverflow");
+    
+    // 3. ACCESS VIOLATION (Both can catch, but WER might provide better details)
+    // crash_func_t crash_func = loadCrashFunction("crashAccessViolation");
+    
+    // 4. HEAP CORRUPTION (WER often catches these better)
+    // crash_func_t crash_func = loadCrashFunction("crashHeapCorruption");
+    
     if (!crash_func)
     {
         std::cerr << "Failed to load crash function from library" << std::endl;
         return;
     }
 
-    // Call the crash function
+    std::cout << "About to call crash function...\n";
+    
+    // Call the selected crash function
     crash_func();
 
     // We should never reach here

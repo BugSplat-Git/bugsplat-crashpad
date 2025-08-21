@@ -21,6 +21,7 @@ typedef void (*crash_func_t)(void);
 std::string getExecutableDir();
 bool initializeCrashpad(std::string dbName, std::string appName, std::string appVersion);
 crash_func_t loadCrashFunction();
+crash_func_t loadCrashFunction(const std::string& functionName);
 void generateExampleCallstackAndCrash();
 void func0();
 void func1();
