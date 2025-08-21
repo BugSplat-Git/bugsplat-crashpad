@@ -14,9 +14,13 @@
 #define BUGSPLAT_APP_NAME "MyCMakeCrasher"
 #define BUGSPLAT_APP_VERSION "1.0"
 
+// Function type for the crash function
+typedef void (*crash_func_t)(void);
+
 // Function declarations
 std::string getExecutableDir();
 bool initializeCrashpad(std::string dbName, std::string appName, std::string appVersion);
+crash_func_t loadCrashFunction();
 void generateExampleCallstackAndCrash();
 void func0();
 void func1();
