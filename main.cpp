@@ -6,7 +6,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#include <werapi.h>
+#include "windows.h"
 #elif defined(__APPLE__)
 #include <mach-o/dyld.h>
 #include <dlfcn.h>
@@ -45,6 +45,100 @@ int main()
     generateExampleCallstackAndCrash();
 
     return 0;
+}
+
+void func0()
+{
+    std::cout << "In func0, calling func1..." << std::endl;
+    func1();
+}
+
+void func1()
+{
+    std::cout << "In func1, calling func2..." << std::endl;
+    func2();
+}
+
+// Create some dummy frames for a more interesting call stack
+void func2()
+{
+    std::cout << "In func2, loading library and about to crash..." << std::endl;
+
+    // ========================================
+    // CRASH TYPE SELECTION
+    // ========================================
+    // Uncomment ONE of the following crash types to test different scenarios:
+    
+    // 1. NULL POINTER DEREFERENCE (Crashpad handles this well)
+    // crash_func_t crash_func = loadCrashFunction("crash");
+    
+    // 2. STACK OVERFLOW (WER catches this better on Windows) - CURRENTLY SELECTED
+    crash_func_t crash_func = loadCrashFunction("crashStackOverflow");
+    
+    // 3. ACCESS VIOLATION (Both can catch, but WER might provide better details)
+    // crash_func_t crash_func = loadCrashFunction("crashAccessViolation");
+    
+    // 4. STACK BUFFER OVERRUN (WER catches STATUS_STACK_BUFFER_OVERRUN better)
+    // crash_func_t crash_func = loadCrashFunction("crashStackOverrun");
+    
+    if (!crash_func)
+    {
+        std::cerr << "Failed to load crash function from library" << std::endl;
+        return;
+    }
+
+    std::cout << "About to call crash function..." << std::endl;
+    crash_func();
+}
+
+void generateExampleCallstackAndCrash()
+{
+    std::cout << "Starting call chain..." << std::endl;
+    func0();
+}
+
+// Function to get the executable directory
+std::string getExecutableDir()
+{
+#ifdef _WIN32
+    char path[MAX_PATH];
+    GetModuleFileNameA(NULL, path, MAX_PATH);
+    std::string pathStr(path);
+    size_t lastBackslash = pathStr.find_last_of('\\');
+    if (lastBackslash != std::string::npos)
+    {
+        return pathStr.substr(0, lastBackslash);
+    }
+    return "";
+#elif defined(__APPLE__)
+    char path[PATH_MAX];
+    uint32_t size = sizeof(path);
+    if (_NSGetExecutablePath(path, &size) == 0)
+    {
+        std::string pathStr(path);
+        size_t lastSlash = pathStr.find_last_of('/');
+        if (lastSlash != std::string::npos)
+        {
+            return pathStr.substr(0, lastSlash);
+        }
+    }
+    return "";
+#else // Linux
+    char pBuf[FILENAME_MAX];
+    int len = sizeof(pBuf);
+    int bytes = MIN(readlink("/proc/self/exe", pBuf, len), len - 1);
+    if (bytes >= 0)
+    {
+        pBuf[bytes] = '\0';
+    }
+
+    char *lastForwardSlash = strrchr(&pBuf[0], '/');
+    if (lastForwardSlash == NULL)
+        return "";
+    *lastForwardSlash = '\0';
+
+    return pBuf;
+#endif
 }
 
 // Function to initialize Crashpad with BugSplat integration
@@ -136,23 +230,9 @@ bool initializeCrashpad(std::string dbName, std::string appName, std::string app
     );
 
 #ifdef _WIN32
-    // Register WER module after starting the handler
+    // Set up WER integration if Crashpad initialization was successful
     if (success) {
-        std::string werDllPath = exeDir + "\\crashpad_wer.dll";
-        std::cout << "Looking for Crashpad WER DLL at: " << werDllPath << std::endl;
-        
-        if (std::filesystem::exists(werDllPath)) {
-            std::cout << "Crashpad WER DLL found, registering with Crashpad..." << std::endl;
-
-            std::wstring werDllPathW(werDllPath.begin(), werDllPath.end());
-            if (client.RegisterWerModule(werDllPathW)) {
-                std::cout << "Successfully registered WER module: " << werDllPath << std::endl;
-            } else {
-                std::cerr << "Failed to register WER module: " << werDllPath << std::endl;
-            }
-        } else {
-            std::cout << "Crashpad WER DLL not found - continuing without WER integration" << std::endl;
-        }
+        setupWerIntegration(client, exeDir);
     }
 #endif
 
@@ -239,98 +319,4 @@ crash_func_t loadCrashFunction(const std::string& functionName)
 #endif
 
     return crash_func;
-}
-
-// Create some dummy frames for a more interesting call stack
-void func2()
-{
-    std::cout << "In func2, loading library and about to crash..." << std::endl;
-
-    // ========================================
-    // CRASH TYPE SELECTION
-    // ========================================
-    // Uncomment ONE of the following crash types to test different scenarios:
-    
-    // 1. NULL POINTER DEREFERENCE (Crashpad handles this well)
-    // crash_func_t crash_func = loadCrashFunction("crash");
-    
-    // 2. STACK OVERFLOW (WER catches this better on Windows) - CURRENTLY SELECTED
-    crash_func_t crash_func = loadCrashFunction("crashStackOverflow");
-    
-    // 3. ACCESS VIOLATION (Both can catch, but WER might provide better details)
-    // crash_func_t crash_func = loadCrashFunction("crashAccessViolation");
-    
-    // 4. STACK BUFFER OVERRUN (WER catches STATUS_STACK_BUFFER_OVERRUN better)
-    // crash_func_t crash_func = loadCrashFunction("crashStackOverrun");
-    
-    if (!crash_func)
-    {
-        std::cerr << "Failed to load crash function from library" << std::endl;
-        return;
-    }
-
-    std::cout << "About to call crash function..." << std::endl;
-    crash_func();
-}
-
-void func1()
-{
-    std::cout << "In func1, calling func2..." << std::endl;
-    func2();
-}
-
-void func0()
-{
-    std::cout << "In func0, calling func1..." << std::endl;
-    func1();
-}
-
-void generateExampleCallstackAndCrash()
-{
-    std::cout << "Starting call chain..." << std::endl;
-    func0();
-}
-
-// Function to get the executable directory
-std::string getExecutableDir()
-{
-#ifdef _WIN32
-    char path[MAX_PATH];
-    GetModuleFileNameA(NULL, path, MAX_PATH);
-    std::string pathStr(path);
-    size_t lastBackslash = pathStr.find_last_of('\\');
-    if (lastBackslash != std::string::npos)
-    {
-        return pathStr.substr(0, lastBackslash);
-    }
-    return "";
-#elif defined(__APPLE__)
-    char path[PATH_MAX];
-    uint32_t size = sizeof(path);
-    if (_NSGetExecutablePath(path, &size) == 0)
-    {
-        std::string pathStr(path);
-        size_t lastSlash = pathStr.find_last_of('/');
-        if (lastSlash != std::string::npos)
-        {
-            return pathStr.substr(0, lastSlash);
-        }
-    }
-    return "";
-#else // Linux
-    char pBuf[FILENAME_MAX];
-    int len = sizeof(pBuf);
-    int bytes = MIN(readlink("/proc/self/exe", pBuf, len), len - 1);
-    if (bytes >= 0)
-    {
-        pBuf[bytes] = '\0';
-    }
-
-    char *lastForwardSlash = strrchr(&pBuf[0], '/');
-    if (lastForwardSlash == NULL)
-        return "";
-    *lastForwardSlash = '\0';
-
-    return pBuf;
-#endif
 }
