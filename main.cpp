@@ -274,15 +274,18 @@ crash_func_t loadCrashFunction(const std::string& functionName)
 
     // Determine library path based on platform
 #ifdef _WIN32
-    std::string libPath = exeDir + "/crash.dll";
+    std::string libPath = exeDir + "\\crash.dll";
 #elif defined(__APPLE__)
     std::string libPath = exeDir + "/libcrash.dylib";
 #else // Linux
     std::string libPath = exeDir + "/libcrash.so.2";
 #endif
 
+    std::cout << "Loading crash function '" << functionName << "' from library: " << libPath << std::endl;
+
     // Load the library
 #ifdef _WIN32
+    // Load the library using LoadLibrary
     HMODULE handle = LoadLibraryA(libPath.c_str());
     if (!handle)
     {

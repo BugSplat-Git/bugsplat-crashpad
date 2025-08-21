@@ -7,7 +7,7 @@
 #include <winreg.h>
 
 bool createWerRegistryKey(const std::string& dllPath) {
-    const char* registryPath = "SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\RuntimeExceptionHelperModules";
+    const char* registryPath = "SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\RuntimeExceptionHandlerModules";
     HKEY hKey;
     
     // Open/create the registry key
