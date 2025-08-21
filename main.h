@@ -27,10 +27,5 @@ void func0();
 void func1();
 void func2();
 
-#ifdef _WIN32
-// Windows-specific WER callback functions
-bool registerWERCallbacks();
-void unregisterWERCallbacks();
-#endif
 
 #endif // MAIN_H 

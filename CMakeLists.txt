@@ -129,13 +129,13 @@ endif()
 
 # Build the WER callback DLL (Windows only)
 if(WIN32)
-    add_library(wer SHARED wer.cpp wer.h wer.def)
-    set_target_properties(wer PROPERTIES 
+    add_library(werCallback SHARED wer.cpp wer.h wer.def)
+    set_target_properties(werCallback PROPERTIES 
         OUTPUT_NAME "wer"
         LINK_FLAGS "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/wer.def"
     )
-    target_link_libraries(wer ${CRASHPAD_WER_LIBRARIES})
-    target_compile_definitions(wer PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(werCallback ${CRASHPAD_WER_LIBRARIES})
+    target_compile_definitions(werCallback PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
 # Add executable
@@ -193,10 +193,10 @@ if(WIN32)
         ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/$<TARGET_FILE_NAME:crash>
     )
     # Copy the WER callback DLL to the build directory
-    add_custom_command(TARGET wer POST_BUILD
+    add_custom_command(TARGET werCallback POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
-        $<TARGET_FILE:wer>
-        ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/$<TARGET_FILE_NAME:wer>
+        $<TARGET_FILE:werCallback>
+        ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/$<TARGET_FILE_NAME:werCallback>
     )
 elseif(APPLE)
     add_custom_command(TARGET crash POST_BUILD
@@ -247,7 +247,7 @@ endif()
 install(TARGETS MyCMakeCrasher DESTINATION bin)
 install(TARGETS crash DESTINATION bin)
 if(WIN32)
-    install(TARGETS wer DESTINATION bin)
+    install(TARGETS werCallback DESTINATION bin)
 endif()
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/crashpad_handler${CMAKE_EXECUTABLE_SUFFIX} DESTINATION bin)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/attachment.txt DESTINATION bin)
@@ -257,7 +257,7 @@ if(WIN32)
   add_custom_target(upload_symbols ALL
     COMMAND powershell -ExecutionPolicy Bypass -File 
             ${CMAKE_CURRENT_SOURCE_DIR}/scripts/upload_symbols.ps1
-    DEPENDS MyCMakeCrasher crash wer
+    DEPENDS MyCMakeCrasher crash werCallback
     COMMENT "Uploading symbols to BugSplat"
   )
 elseif(APPLE)

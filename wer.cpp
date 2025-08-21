@@ -7,8 +7,8 @@
 #include <Windows.h>
 // werapi.h must be after Windows.h
 #include <werapi.h>
-
-#include "third_party/crashpad/handler/win/wer/crashpad_wer.h"
+#include <sstream>
+#include <iostream>
 
 extern "C" {
 
@@ -34,8 +34,8 @@ HRESULT OutOfProcessExceptionEventCallback(
     PDWORD pchSize,
     PDWORD pdwSignatureCount) {
     
-    // List of exception types that WER should handle instead of Crashpad
-    // These are exceptions that Crashpad typically doesn't catch well
+    // List of exception types that WER should handle for better crash reporting
+    // These are exceptions that Crashpad sometimes has difficulty with
     DWORD wanted_exceptions[] = {
         0xC0000409,  // STATUS_STACK_BUFFER_OVERRUN (stack overflow/corruption)
         0xC00000FD,  // STATUS_STACK_OVERFLOW (stack overflow)
@@ -43,23 +43,32 @@ HRESULT OutOfProcessExceptionEventCallback(
         0xC0000005,  // STATUS_ACCESS_VIOLATION (when in specific contexts)
     };
     
-    // Use Crashpad's WER integration to handle these exceptions
-    bool result = crashpad::wer::ExceptionEvent(
-        wanted_exceptions, 
-        sizeof(wanted_exceptions) / sizeof(DWORD), 
-        pContext,
-        pExceptionInformation);
+    // Check if this is an exception type we want to handle
+    DWORD exceptionCode = pExceptionInformation->ExceptionRecord.ExceptionCode;
+    bool shouldHandle = false;
     
-    if (result) {
-        // We successfully handled the exception
+    for (int i = 0; i < sizeof(wanted_exceptions) / sizeof(DWORD); i++) {
+        if (exceptionCode == wanted_exceptions[i]) {
+            shouldHandle = true;
+            break;
+        }
+    }
+    
+    if (shouldHandle) {
+        // We want to handle this exception type
         *pbOwnershipClaimed = TRUE;
         
-        // Return E_FAIL to indicate we've terminated the process
-        // This tells WER that we've handled it but the process should still terminate
+        // Log that we caught this exception (optional debugging)
+        std::wostringstream logStream;
+        logStream << L"WER callback caught exception: 0x" << std::hex << exceptionCode;
+        OutputDebugStringW(logStream.str().c_str());
+        
+        // Return E_FAIL to indicate the process should terminate
+        // This allows WER to generate a crash dump through normal Windows mechanisms
         return E_FAIL;
     }
     
-    // Could not handle the exception, let other WER handlers or default WER try
+    // This is not an exception type we specifically handle
     *pbOwnershipClaimed = FALSE;
     return S_OK;
 }
