@@ -145,7 +145,7 @@ bool initializeCrashpad(std::string dbName, std::string appName, std::string app
             std::cout << "Crashpad WER DLL found, registering with Crashpad..." << std::endl;
             std::wstring werDllPathW(werDllPath.begin(), werDllPath.end());
             if (client.RegisterWerModule(werDllPathW)) {
-                std::cout << "✅ Successfully registered WER module: " << werDllPath << std::endl;
+                std::cout << "Successfully registered WER module: " << werDllPath << std::endl;
                 std::cout << "WER callbacks are now active for enhanced crash detection!" << std::endl;
             } else {
                 std::cerr << "❌ Failed to register WER module: " << werDllPath << std::endl;
