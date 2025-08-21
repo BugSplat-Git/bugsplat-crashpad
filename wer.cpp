@@ -34,43 +34,21 @@ HRESULT OutOfProcessExceptionEventCallback(
     PDWORD pchSize,
     PDWORD pdwSignatureCount) {
     
-    // List of exception types that WER should handle for better crash reporting
-    // These are exceptions that Crashpad sometimes has difficulty with
-    DWORD wanted_exceptions[] = {
-        0xC0000409,  // STATUS_STACK_BUFFER_OVERRUN (stack overflow/corruption)
-        0xC00000FD,  // STATUS_STACK_OVERFLOW (stack overflow)
-        0xC0000374,  // STATUS_HEAP_CORRUPTION (heap corruption)
-        0xC0000005,  // STATUS_ACCESS_VIOLATION (when in specific contexts)
-    };
+    // For simplicity and reliability, we'll handle all exceptions that reach this callback
+    // This ensures WER can generate comprehensive crash dumps for any crashes that 
+    // Crashpad might have difficulty with
     
-    // Check if this is an exception type we want to handle
-    DWORD exceptionCode = pExceptionInformation->ExceptionRecord.ExceptionCode;
-    bool shouldHandle = false;
+    // Claim ownership of this exception
+    *pbOwnershipClaimed = TRUE;
     
-    for (int i = 0; i < sizeof(wanted_exceptions) / sizeof(DWORD); i++) {
-        if (exceptionCode == wanted_exceptions[i]) {
-            shouldHandle = true;
-            break;
-        }
-    }
+    // Log that we caught an exception (for debugging)
+    OutputDebugStringW(L"WER callback handling exception for enhanced crash reporting");
     
-    if (shouldHandle) {
-        // We want to handle this exception type
-        *pbOwnershipClaimed = TRUE;
-        
-        // Log that we caught this exception (optional debugging)
-        std::wostringstream logStream;
-        logStream << L"WER callback caught exception: 0x" << std::hex << exceptionCode;
-        OutputDebugStringW(logStream.str().c_str());
-        
-        // Return E_FAIL to indicate the process should terminate
-        // This allows WER to generate a crash dump through normal Windows mechanisms
-        return E_FAIL;
-    }
-    
-    // This is not an exception type we specifically handle
-    *pbOwnershipClaimed = FALSE;
-    return S_OK;
+    // Return E_FAIL to indicate the process should terminate
+    // This allows WER to generate a crash dump and potentially upload it through
+    // the normal Windows Error Reporting mechanisms, while still allowing
+    // Crashpad to process it as well
+    return E_FAIL;
 }
 
 // WER signature callback - not used in our implementation
