@@ -7,8 +7,9 @@
 #include <Windows.h>
 // werapi.h must be after Windows.h
 #include <werapi.h>
-#include <sstream>
-#include <iostream>
+
+// Note: crashpad::wer::ExceptionEvent may not be available in public Crashpad builds
+// We'll implement a standalone WER callback that works with Crashpad's RegisterWerModule()
 
 extern "C" {
 
@@ -34,21 +35,37 @@ HRESULT OutOfProcessExceptionEventCallback(
     PDWORD pchSize,
     PDWORD pdwSignatureCount) {
     
-    // For simplicity and reliability, we'll handle all exceptions that reach this callback
-    // This ensures WER can generate comprehensive crash dumps for any crashes that 
-    // Crashpad might have difficulty with
-    
-    // Claim ownership of this exception
-    *pbOwnershipClaimed = TRUE;
-    
-    // Log that we caught an exception (for debugging)
+    // Log that our callback was invoked
     OutputDebugStringW(L"WER callback handling exception for enhanced crash reporting");
     
-    // Return E_FAIL to indicate the process should terminate
-    // This allows WER to generate a crash dump and potentially upload it through
-    // the normal Windows Error Reporting mechanisms, while still allowing
-    // Crashpad to process it as well
-    return E_FAIL;
+    // Exceptions that are not collected by crashpad's in-process handlers
+    // Based on Chrome's implementation - focus on stack overflow crashes
+    DWORD wanted_exceptions[] = {
+        0xC0000409,  // STATUS_STACK_BUFFER_OVERRUN (stack overflow/corruption)
+        0xC00000FD,  // STATUS_STACK_OVERFLOW (stack overflow)  
+        0xC0000374,  // STATUS_HEAP_CORRUPTION (heap corruption)
+    };
+    
+    // Use Crashpad's WER integration to handle these exceptions
+    bool result = crashpad::wer::ExceptionEvent(
+        wanted_exceptions, 
+        sizeof(wanted_exceptions) / sizeof(DWORD), 
+        pContext,
+        pExceptionInformation);
+
+    if (result) {
+        // Crashpad successfully handled the exception
+        *pbOwnershipClaimed = TRUE;
+        OutputDebugStringW(L"WER callback handling exception for enhanced crash reporting - Crashpad handled exception - ownership claimed");
+        
+        // Technically we failed as we terminated the process
+        return E_FAIL;
+    }
+    
+    // Could not dump for whatever reason, so let other helpers/WER have a chance
+    OutputDebugStringW(L"WER CALLBACK: Crashpad could not handle - letting other handlers try");
+    *pbOwnershipClaimed = FALSE;
+    return S_OK;
 }
 
 // WER signature callback - not used in our implementation

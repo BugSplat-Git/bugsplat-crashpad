@@ -129,8 +129,13 @@ if(WIN32)
         OUTPUT_NAME "wer"
         LINK_FLAGS "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/wer.def"
     )
-    # Only link with standard Windows libraries - no Crashpad dependencies needed
-    target_link_libraries(werCallback wer.lib)
+    # Link with Crashpad libraries that contain WER functionality
+    target_link_libraries(werCallback 
+        ${CRASHPAD_OUT_DIR}/obj/handler/handler.lib
+        ${CRASHPAD_OUT_DIR}/obj/util/util.lib
+        ${CRASHPAD_OUT_DIR}/obj/third_party/mini_chromium/mini_chromium/base/base.lib
+        wer.lib
+    )
     target_compile_definitions(werCallback PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
