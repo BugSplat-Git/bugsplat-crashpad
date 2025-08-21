@@ -8,7 +8,7 @@
 // werapi.h must be after Windows.h
 #include <werapi.h>
 
-#include "third_party/crashpad/crashpad/handler/win/wer/crashpad_wer.h"
+#include "third_party/crashpad/handler/win/wer/crashpad_wer.h"
 
 extern "C" {
 
