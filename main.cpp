@@ -40,9 +40,6 @@ int main()
 
     std::cout << "Hello, World!" << std::endl;
     std::cout << "Crashpad initialized successfully!" << std::endl;
-#ifdef _WIN32
-    std::cout << "WER integration enabled for enhanced crash detection!" << std::endl;
-#endif
     std::cout << "Generating crash..." << std::endl;
 
     generateExampleCallstackAndCrash();
