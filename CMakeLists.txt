@@ -166,12 +166,12 @@ add_custom_command(TARGET MyCMakeCrasher POST_BUILD
     ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/crashpad_handler${CMAKE_EXECUTABLE_SUFFIX}
 )
 
-# Copy Crashpad's WER callback DLL to build directory as wer.dll (Windows only)
+# Copy Crashpad's WER callback DLL to build directory (Windows only)
 if(WIN32)
     add_custom_command(TARGET MyCMakeCrasher POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
         ${CRASHPAD_OUT_DIR}/crashpad_wer.dll
-        ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/wer.dll
+        ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/crashpad_wer.dll
     )
 endif()
 
@@ -238,7 +238,7 @@ install(TARGETS crash DESTINATION bin)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/crashpad_handler${CMAKE_EXECUTABLE_SUFFIX} DESTINATION bin)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/attachment.txt DESTINATION bin)
 if(WIN32)
-    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/wer.dll DESTINATION bin)
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_CONFIG_DIR}/crashpad_wer.dll DESTINATION bin)
 endif()
 
 # Symbol upload target - updated to use platform-specific scripts
