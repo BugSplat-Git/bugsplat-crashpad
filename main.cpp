@@ -268,8 +268,8 @@ void func2()
     // 3. ACCESS VIOLATION (Both can catch, but WER might provide better details)
     // crash_func_t crash_func = loadCrashFunction("crashAccessViolation");
     
-    // 4. HEAP CORRUPTION (WER often catches these better)
-    // crash_func_t crash_func = loadCrashFunction("crashHeapCorruption");
+    // 4. STACK BUFFER OVERRUN (WER catches STATUS_STACK_BUFFER_OVERRUN better)
+    // crash_func_t crash_func = loadCrashFunction("crashStackOverrun");
     
     if (!crash_func)
     {

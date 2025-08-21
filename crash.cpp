@@ -1,4 +1,6 @@
 #include <cstddef>
+#include <cstdio>
+#include <cstring>
 
 extern "C" {
     #ifdef _WIN32
@@ -42,11 +44,18 @@ extern "C" {
     #else
     __attribute__((visibility("default")))
     #endif
-    void crashHeapCorruption() {
-        // Allocate memory and then corrupt it
-        int* ptr = new int[10];
-        delete[] ptr;
-        // Use after free - this can cause heap corruption
-        *ptr = 42;
+    void crashStackOverrun() {
+        // Generate STATUS_STACK_BUFFER_OVERRUN (0xc0000409). This is not catchable by user code.
+        // You can use WER to generate a minidump that can be uploaded to BugSplat on the next run.
+        printf("Stack buffer overrun starting...\n");
+
+        char buffer[10];
+
+        // This should definitely corrupt the stack canary
+        // Writing way beyond the buffer bounds
+        memset(buffer, 'A', 2000);  // Write 2000 bytes into a 10-byte buffer
+
+        printf("Stack buffer overrun completed.\n");
+        // The error will trigger when the function tries to return
     }
 } 
