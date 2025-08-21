@@ -69,16 +69,16 @@ void func2()
     // ========================================
     // Uncomment ONE of the following crash types to test different scenarios:
     
-    // 1. NULL POINTER DEREFERENCE (Crashpad handles this well)
-    // crash_func_t crash_func = loadCrashFunction("crash");
-    
-    // 2. STACK OVERFLOW (WER catches this better on Windows) - CURRENTLY SELECTED
-    crash_func_t crash_func = loadCrashFunction("crashStackOverflow");
-    
-    // 3. ACCESS VIOLATION (Both can catch, but WER might provide better details)
+    // 1. NULL POINTER DEREFERENCE
+    crash_func_t crash_func = loadCrashFunction("crash");
+
+    // 2. ACCESS VIOLATION
     // crash_func_t crash_func = loadCrashFunction("crashAccessViolation");
     
-    // 4. STACK BUFFER OVERRUN (WER catches STATUS_STACK_BUFFER_OVERRUN better)
+    // 3. STACK OVERFLOW
+    // crash_func_t crash_func = loadCrashFunction("crashStackOverflow");
+    
+    // 4. STACK BUFFER OVERRUN (WER callback required for Windows see https://github.com/BugSplat-Git/bugsplat-crashpad/wiki/WER)
     // crash_func_t crash_func = loadCrashFunction("crashStackOverrun");
     
     if (!crash_func)
