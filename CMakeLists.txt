@@ -87,11 +87,6 @@ if(WIN32)
         ${CRASHPAD_OUT_DIR}/obj/util/util.lib
         ${CRASHPAD_OUT_DIR}/obj/third_party/mini_chromium/mini_chromium/base/base.lib
     )
-    # Add WER-specific libraries for Windows
-    set(CRASHPAD_WER_LIBRARIES
-        ${CRASHPAD_OUT_DIR}/obj/handler/win/wer/crashpad_wer.lib
-        wer.lib
-    )
     set(CRASHPAD_HANDLER ${CRASHPAD_OUT_DIR}/crashpad_handler.exe)
 elseif(APPLE)
     set(CRASHPAD_LIBRARIES
@@ -134,7 +129,8 @@ if(WIN32)
         OUTPUT_NAME "wer"
         LINK_FLAGS "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/wer.def"
     )
-    target_link_libraries(werCallback ${CRASHPAD_WER_LIBRARIES})
+    # Only link with standard Windows libraries - no Crashpad dependencies needed
+    target_link_libraries(werCallback wer.lib)
     target_compile_definitions(werCallback PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
