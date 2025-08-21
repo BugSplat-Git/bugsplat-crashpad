@@ -137,12 +137,11 @@ When building Crashpad on Windows, `crashpad_wer.dll` is automatically created.
 
 ### 2. Include Windows-Specific Files in Build
 ```cmake
-# Add Windows-specific source files to your project
+# Add executable with platform-specific source files
 if(WIN32)
-    target_sources(${PROJECT_NAME} PRIVATE
-        windows.cpp
-        windows.h
-    )
+    add_executable(MyCMakeCrasher main.cpp windows.cpp)
+else()
+    add_executable(MyCMakeCrasher main.cpp)
 endif()
 ```
 

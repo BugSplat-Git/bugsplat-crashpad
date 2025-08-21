@@ -124,8 +124,12 @@ endif()
 
 
 
-# Add executable
-add_executable(MyCMakeCrasher main.cpp)
+# Add executable with platform-specific source files
+if(WIN32)
+    add_executable(MyCMakeCrasher main.cpp windows.cpp)
+else()
+    add_executable(MyCMakeCrasher main.cpp)
+endif()
 
 # Platform-specific libraries and link order
 if(APPLE)
