@@ -6,82 +6,66 @@
 #include <windows.h>
 #include <winreg.h>
 
-bool createWerRegistryKey(const std::string& dllPath) {
-    const char* registryPath = "SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\RuntimeExceptionHandlerModules";
-    HKEY hKey;
-    
-    // Open/create the registry key
-    LONG result = RegCreateKeyExA(
-        HKEY_CURRENT_USER,
-        registryPath,
-        0,
-        NULL,
-        REG_OPTION_NON_VOLATILE,
-        KEY_WRITE,
-        NULL,
-        &hKey,
-        NULL
-    );
+BOOL DoesRegistryValueExist(HKEY hRootKey, LPCWSTR keyPath, LPCWSTR valueName)
+{
+    HKEY hKey = NULL;
+    LSTATUS result = RegOpenKeyExW(hRootKey, keyPath, 0, KEY_READ, &hKey);
     
     if (result != ERROR_SUCCESS) {
-        std::cerr << "Failed to open/create WER registry key. Error: " << result << std::endl;
-        return false;
+        return FALSE;  // Key doesn't exist
     }
     
-    // Set the DLL path as a DWORD value with data 0x0
-    DWORD value = 0x0;
-    result = RegSetValueExA(
-        hKey,
-        dllPath.c_str(),  // Value name is the full DLL path
-        0,
-        REG_DWORD,
-        reinterpret_cast<const BYTE*>(&value),
-        sizeof(DWORD)
-    );
-    
+    // Check if the specific value exists
+    result = RegQueryValueExW(hKey, valueName, NULL, NULL, NULL, NULL);
     RegCloseKey(hKey);
     
-    if (result != ERROR_SUCCESS) {
-        std::cerr << "Failed to set WER registry value. Error: " << result << std::endl;
-        return false;
-    }
-    
-    std::cout << "Successfully created WER registry key for: " << dllPath << std::endl;
-    return true;
+    return (result == ERROR_SUCCESS);
 }
 
-void setupWerIntegration(crashpad::CrashpadClient& client, const std::string& exeDir) {
-    std::string werDllPath = exeDir + "\\crashpad_wer.dll";
-    std::cout << "Looking for Crashpad WER DLL at: " << werDllPath << std::endl;
+// Check for RuntimeExceptionHelperModules key
+BOOL CheckRuntimeExceptionHelper(const std::string& dllPath)
+{
+    const LPCWSTR keyPath = L"SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\RuntimeExceptionHelperModules";
+        
+    // Create the value name we're looking for
+    std::wstring wideDllPath(dllPath.begin(), dllPath.end());
+    WCHAR valueName[2048];
+    swprintf_s(valueName, 2048, wideDllPath.c_str());
     
+    // Check if our specific value exists
+    BOOL exists = DoesRegistryValueExist(HKEY_LOCAL_MACHINE, keyPath, valueName);
+    
+    return exists;
+}
+
+
+void setupWerIntegration(crashpad::CrashpadClient& client, const std::string& exeDir) {
+    std::string werDllPath = exeDir + "\\crashpad_wer.dll";    
     if (!std::filesystem::exists(werDllPath)) {
-        std::cout << "Crashpad WER DLL not found - continuing without WER integration" << std::endl;
+        std::cout << "Crashpad WER DLL not found at: " << werDllPath << " - continuing without WER integration" << std::endl;
         return;
     }
-    
-    std::cout << "Crashpad WER DLL found, setting up WER integration..." << std::endl;
-    
-    // Create registry key for WER integration
-    bool registryCreated = createWerRegistryKey(werDllPath);
+      
+    // Check registry key for WER integration
+    bool registryExists = CheckRuntimeExceptionHelper(werDllPath);
+    if( !registryExists) {
+        std::cout << "Crashpad WER registry key: " << werDllPath << " not found" << std::endl;
+        std::cout << "Create this registry value in HKLM\\SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\RuntimeExceptionHelperModules" << std::endl;
+        std::cout << "Continuing without WER integration" << std::endl;
+        return; 
+    }
     
     // Register WER module with Crashpad
     std::wstring werDllPathW(werDllPath.begin(), werDllPath.end());
     bool moduleRegistered = client.RegisterWerModule(werDllPathW);
     
     // Report results
-    if (registryCreated && moduleRegistered) {
-        std::cout << "Successfully set up WER integration: " << werDllPath << std::endl;
+    if (!moduleRegistered) {
+        std::cerr << "Warning: Failed to register WER module with Crashpad - continuing without WER integration" << std::endl;
         return;
     }
     
-    // Handle partial or complete failure
-    if (!registryCreated) {
-        std::cerr << "Warning: Failed to create WER registry key" << std::endl;
-    }
-    if (!moduleRegistered) {
-        std::cerr << "Warning: Failed to register WER module with Crashpad" << std::endl;
-    }
-    std::cerr << "WER integration may not work properly" << std::endl;
+    std::cout << "Successfully set up WER integration: " << werDllPath << std::endl;
 }
 
 #endif // _WIN32

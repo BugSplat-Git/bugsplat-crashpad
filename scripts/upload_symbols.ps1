@@ -9,9 +9,15 @@ $envFile = Join-Path $rootDir ".env"
 if (Test-Path $envFile) {
     Write-Host "Loading environment from .env file..."
     Get-Content $envFile | ForEach-Object {
-        if ($_ -match '(.+)=(.+)') {
-            $key = $matches[1]
-            $value = $matches[2]
+        if ($_ -match '^\s*([^=\s]+)\s*=\s*(.*)$') {
+            $key = $matches[1].Trim()
+            $value = $matches[2].Trim()
+
+            # Remove surrounding quotes if present
+            if ($value -match '^"(.*)"$' -or $value -match "^'(.*)'$") {
+                $value = $matches[1]
+            }
+
             Set-Item -Path "Env:$key" -Value $value
         }
     }

@@ -46,8 +46,7 @@ This project demonstrates how to:
 
 1. Clone the depot_tools repository:
 
-```bash
-# For Linux/macOS
+```
 git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
 ```
 
@@ -59,8 +58,9 @@ export PATH="$PATH:/path/to/depot_tools"
 ```
 
 ```powershell
-# For Windows - add to system environment variables or use:
+# For Windows - add to system environment variables or use the following powershell commands:
 $env:Path = "C:\path\to\depot_tools;$env:Path"
+[Environment]::SetEnvironmentVariable("PATH", $env:PATH, "User")
 ```
 
 3. For Windows, you also need to run:
