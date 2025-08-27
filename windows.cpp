@@ -48,7 +48,7 @@ void setupWerIntegration(crashpad::CrashpadClient& client, const std::string& ex
       
     // Check registry key for WER integration
     bool registryExists = CheckRuntimeExceptionHelper(werDllPath);
-    if( !registryExists) {
+    if (!registryExists) {
         std::cout << "Crashpad WER registry key: " << werDllPath << " not found" << std::endl;
         std::cout << "Create this registry value in HKLM\\SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\RuntimeExceptionHelperModules" << std::endl;
         std::cout << "Continuing without WER integration" << std::endl;
