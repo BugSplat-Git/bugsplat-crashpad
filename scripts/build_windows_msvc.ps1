@@ -26,7 +26,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Debug
 # Build Debug configuration
 cmake --build . --config Debug
 
-Write-Host "Build complete. Run the application with: Debug\MyCMakeCrasher.exe"
+Write-Host "Build complete. Run the application with: .\build\Debug\MyCMakeCrasher.exe"
 
 # Return to root directory
 Set-Location -Path ".." 

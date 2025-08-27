@@ -23,7 +23,7 @@ echo "Configuring with Debug symbols for better crash reporting..."
 cmake .. -DCMAKE_BUILD_TYPE=Debug
 make
 
-echo "Build complete. Run the application with: ./Debug/MyCMakeCrasher"
+echo "Build complete. Run the application with: ./build/Debug/MyCMakeCrasher"
 
 # Return to root directory
 cd .. 

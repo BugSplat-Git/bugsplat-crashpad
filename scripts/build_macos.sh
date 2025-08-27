@@ -31,7 +31,7 @@ echo "Configuring with Debug symbols for better crash reporting..."
 cmake .. -DCMAKE_BUILD_TYPE=Debug
 make
 
-echo "Build complete. Run the application with: ./Debug/MyCMakeCrasher"
+echo "Build complete. Run the application with: ./build/Debug/MyCMakeCrasher"
 
 # Verify dSYM bundles were created in the Debug directory
 if [ ! -d "Debug/MyCMakeCrasher.dSYM" ] || [ ! -d "Debug/libcrash.dylib.dSYM" ]; then
