@@ -46,7 +46,7 @@ This project demonstrates how to:
 
 1. Clone the depot_tools repository:
 
-```
+```bash
 git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
 ```
 
