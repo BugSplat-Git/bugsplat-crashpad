@@ -71,8 +71,8 @@ void func2()
     // 3. STACK OVERFLOW
     // crash_func_t crash_func = loadCrashFunction("crashStackOverflow");
     
-    // 4. STACK BUFFER OVERWRITE (WER callback required for Windows see https://github.com/BugSplat-Git/bugsplat-crashpad/wiki/WER)
-    // crash_func_t crash_func = loadCrashFunction("crashStackOverwrite");
+    // 4. STACK BUFFER OVERRUN (WER callback required for Windows see https://github.com/BugSplat-Git/bugsplat-crashpad/wiki/WER)
+    // crash_func_t crash_func = loadCrashFunction("crashStackOverrun");
     
     if (!crash_func)
     {
