@@ -156,12 +156,15 @@ jobs:
             cp "$RELEASE_OUT_DIR/crashpad_handler" artifacts/${{ matrix.platform }}/release/bin/
           fi
 
-          # Copy include directories (shared between debug and release)
-          cp -r "$CRASHPAD_ROOT"/*.h artifacts/${{ matrix.platform }}/include/crashpad/ 2>/dev/null || true
-          cp -r "$CRASHPAD_ROOT"/client/*.h artifacts/${{ matrix.platform }}/include/crashpad/ 2>/dev/null || true
-          cp -r "$CRASHPAD_ROOT"/util/*.h artifacts/${{ matrix.platform }}/include/crashpad/ 2>/dev/null || true
-          cp -r "$CRASHPAD_ROOT"/base/*.h artifacts/${{ matrix.platform }}/include/crashpad/ 2>/dev/null || true
-          cp -r "$CRASHPAD_ROOT"/third_party/mini_chromium/mini_chromium/* artifacts/${{ matrix.platform }}/include/mini_chromium/ 2>/dev/null || true
+
+          # Recursively copy all .h files from crashpad, preserving directory structure
+          find "$CRASHPAD_ROOT" -type f -name '*.h' \
+            -exec bash -c 'src="$1"; dst="artifacts/${{ matrix.platform }}/include/crashpad/${1#${2}/}"; mkdir -p "$(dirname "$dst")"; cp "$src" "$dst"' _ '{}' "$CRASHPAD_ROOT" \;
+
+          # Recursively copy all .h files from mini_chromium, preserving directory structure
+          MINI_CHROMIUM_ROOT="$CRASHPAD_ROOT/third_party/mini_chromium/mini_chromium"
+          find "$MINI_CHROMIUM_ROOT" -type f -name '*.h' \
+            -exec bash -c 'src="$1"; dst="artifacts/${{ matrix.platform }}/include/mini_chromium/${1#${2}/}"; mkdir -p "$(dirname "$dst")"; cp "$src" "$dst"' _ '{}' "$MINI_CHROMIUM_ROOT" \;
 
           # Verify required files exist
           echo "Verifying debug artifact files..."
