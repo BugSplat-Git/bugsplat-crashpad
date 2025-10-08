@@ -12,7 +12,7 @@ if (-not (Test-Path "crashpad")) {
 } else {
     Write-Host "Crashpad already exists, updating..."
     Set-Location -Path "crashpad"
-    git checkout dialog-2 # TODO BG WIP branch on https://github.com/BugSplat-Git/crashpad
+    git checkout dialog # TODO BG WIP branch on https://github.com/BugSplat-Git/crashpad
     git pull
     gclient sync
 }
