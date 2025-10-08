@@ -12,7 +12,7 @@ if (-not (Test-Path "crashpad")) {
 } else {
     Write-Host "Crashpad already exists, updating..."
     Set-Location -Path "crashpad"
-    git checkout main
+    #git checkout main
     git pull
     gclient sync
 }

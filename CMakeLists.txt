@@ -37,7 +37,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 # Extract configuration values from main.h for symbol uploads
-file(STRINGS "main.h" MAIN_H_CONTENTS)
+file(STRINGS "src/main.h" MAIN_H_CONTENTS)
 foreach(LINE ${MAIN_H_CONTENTS})
   if(LINE MATCHES "^#define BUGSPLAT_DATABASE \"(.*)\"")
     set(BUGSPLAT_DATABASE "${CMAKE_MATCH_1}")
@@ -109,26 +109,29 @@ endif()
 
 # Build the crash library
 if(WIN32)
-    add_library(crash SHARED crash.cpp crash.h)
+    add_library(crash SHARED src/crash.cpp src/crash.h)
     set_target_properties(crash PROPERTIES OUTPUT_NAME "crash")
 elseif(APPLE)
-    add_library(crash SHARED crash.cpp crash.h)
+    add_library(crash SHARED src/crash.cpp src/crash.h)
     set_target_properties(crash PROPERTIES OUTPUT_NAME "crash")
 else() # Linux
-    add_library(crash SHARED crash.cpp crash.h)
+    add_library(crash SHARED src/crash.cpp src/crash.h)
     set_target_properties(crash PROPERTIES 
         OUTPUT_NAME "crash" 
         VERSION 2.0.0 
         SOVERSION 2)
 endif()
 
-
-
 # Add executable with platform-specific source files
 if(WIN32)
-    add_executable(MyCMakeCrasher main.cpp paths.cpp windows.cpp)
+    add_executable(MyCMakeCrasher src/main.cpp src/paths.cpp src/windows.cpp)
 else()
-    add_executable(MyCMakeCrasher main.cpp paths.cpp)
+    add_executable(MyCMakeCrasher src/main.cpp src/paths.cpp)
+endif()
+
+# Crash dialog application for Windows
+if(WIN32)
+  add_executable(BugSplatCrashpadReporter src/dialog.cpp)
 endif()
 
 # Platform-specific libraries and link order
@@ -248,7 +251,7 @@ endif()
 # Symbol upload target - updated to use platform-specific scripts
 if(WIN32)
   add_custom_target(upload_symbols ALL
-    COMMAND powershell -ExecutionPolicy Bypass -File 
+    COMMAND powershell -ExecutionPolicy Bypass -File
             ${CMAKE_CURRENT_SOURCE_DIR}/scripts/upload_symbols.ps1
     DEPENDS MyCMakeCrasher crash
     COMMENT "Uploading symbols to BugSplat"

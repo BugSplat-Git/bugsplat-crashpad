@@ -127,9 +127,10 @@ bool initializeCrashpad(std::string dbName, std::string appName, std::string app
     annotations["user"] = "fred@bugsplat.com";                             // Optional: BugSplat user email
     annotations["list_annotations"] = "Sample crash from dynamic library"; // Optional: BugSplat crash description
 
-    // Disable crashpad rate limiting
+    // Disable crashpad rate limiting and enable crash dialog
     std::vector<std::string> arguments;
     arguments.push_back("--no-rate-limit");
+    arguments.push_back("--enable-crash-dialog");
 
     // File paths of attachments to be uploaded with the minidump file at crash time
     std::vector<base::FilePath> attachments;
