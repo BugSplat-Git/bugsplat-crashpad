@@ -36,7 +36,7 @@ if (-not (Test-Path $symbolUploader)) {
 
 Write-Host "Uploading symbols from $symbolsDir"
 
-& $symbolUploader -b $database -a $appName -v $version -d $symbolsDir -f "**/*.pdb" -i $clientId -s $clientSecret -m
+& $symbolUploader -b $database -a $appName -v $version -d $symbolsDir -f "**/{MyCMakeCrasher,crash}.pdb" -i $clientId -s $clientSecret -m
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Symbol upload failed with exit code $LASTEXITCODE"

@@ -131,7 +131,7 @@ endif()
 
 # Crash dialog application for Windows
 if(WIN32)
-  add_executable(BugSplatCrashpadReporter src/dialog.cpp)
+  add_executable(BugSplatCrashpadReporter WIN32 src/dialog.cpp)
 endif()
 
 # Platform-specific libraries and link order
