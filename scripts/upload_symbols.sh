@@ -28,20 +28,20 @@ if [ ! -d "$DEBUG_DIR" ]; then
     exit 1
 fi
 
-# Extract configuration from main.h
-MAIN_H="${ROOT_DIR}/main.h"
+# Extract configuration from src/main.h
+MAIN_H="${ROOT_DIR}/src/main.h"
 if [ ! -f "$MAIN_H" ]; then
-    echo "Error: main.h not found."
+    echo "Error: src/main.h not found."
     exit 1
 fi
 
-# Extract values from main.h - macOS compatible using sed
+# Extract values from src/main.h - macOS compatible using sed
 DATABASE=$(grep "^#define BUGSPLAT_DATABASE" "$MAIN_H" | sed -E 's/.*"([^"]+)".*/\1/')
 APP_NAME=$(grep "^#define BUGSPLAT_APP_NAME" "$MAIN_H" | sed -E 's/.*"([^"]+)".*/\1/')
 APP_VERSION=$(grep "^#define BUGSPLAT_APP_VERSION" "$MAIN_H" | sed -E 's/.*"([^"]+)".*/\1/')
 
 if [ -z "$DATABASE" ] || [ -z "$APP_NAME" ] || [ -z "$APP_VERSION" ]; then
-    echo "Error: Could not extract all required values from main.h."
+    echo "Error: Could not extract all required values from src/main.h."
     echo "DATABASE='$DATABASE'"
     echo "APP_NAME='$APP_NAME'"
     echo "APP_VERSION='$APP_VERSION'"

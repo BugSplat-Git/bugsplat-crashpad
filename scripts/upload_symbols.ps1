@@ -45,9 +45,9 @@ if (-not (Test-Path $debugDir)) {
 }
 
 # Extract configuration from main.h
-$mainH = Join-Path $rootDir "main.h"
+$mainH = Join-Path $rootDir "src/main.h"
 if (-not (Test-Path $mainH)) {
-    Write-Error "Error: main.h not found."
+    Write-Error "Error: src/main.h not found."
     exit 1
 }
 
@@ -58,15 +58,15 @@ $appName = ($mainContent | Select-String '#define BUGSPLAT_APP_NAME' | ForEach-O
 $appVersion = ($mainContent | Select-String '#define BUGSPLAT_APP_VERSION' | ForEach-Object { if ($_.Line -match '"([^"]+)"') { $matches[1] } })
 
 if (-not $database) {
-    Write-Error "Error: Could not extract BUGSPLAT_DATABASE from main.h."
+    Write-Error "Error: Could not extract BUGSPLAT_DATABASE from src/main.h."
     exit 1
 }
 if (-not $appName) {
-    Write-Error "Error: Could not extract BUGSPLAT_APP_NAME from main.h."
+    Write-Error "Error: Could not extract BUGSPLAT_APP_NAME from src/main.h."
     exit 1
 }
 if (-not $appVersion) {
-    Write-Error "Error: Could not extract BUGSPLAT_APP_VERSION from main.h."
+    Write-Error "Error: Could not extract BUGSPLAT_APP_VERSION from src/main.h."
     exit 1
 }
 
