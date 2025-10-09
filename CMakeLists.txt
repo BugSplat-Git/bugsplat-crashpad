@@ -77,6 +77,7 @@ endif()
 include_directories(
     ${CRASHPAD_ROOT}
     ${CRASHPAD_ROOT}/third_party/mini_chromium/mini_chromium
+    ${CRASHPAD_OUT_DIR}/gen
 )
 
 # Set up platform-specific libraries
