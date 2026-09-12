@@ -24,11 +24,16 @@ STAGE=$(mktemp -d)
 PKG="$STAGE/crashpad"
 mkdir -p "$PKG/out/release" "$DEST"
 
-copy_headers() {  # copy_headers <rel-dir> [find-args...]
-  local rel=$1; shift
-  [ -d "$ROOT/$rel" ] || return 0
-  (cd "$ROOT" && find "$rel" -type f \( -name '*.h' "$@" \) -print0) |
-    (cd "$ROOT" && xargs -0 -I{} sh -c 'mkdir -p "$0/$(dirname "{}")" && cp "{}" "$0/{}"' "$PKG")
+# find | tar | tar keeps the relative tree and works with GNU tar (Linux, Git Bash) and bsdtar
+# (macOS); xargs -I hits BSD xargs' line-length limit on a header list this long.
+copy_tree() {  # copy_tree <src-root> <dest-root> <find expression...>
+  local src=$1 dst=$2; shift 2
+  mkdir -p "$dst"
+  (cd "$src" && find "$@" -print0 | tar -c --null -T - -f -) | (cd "$dst" && tar -x -f -)
+}
+copy_headers() {  # copy_headers <rel-dir>
+  [ -d "$ROOT/$1" ] || return 0
+  copy_tree "$ROOT" "$PKG" "$1" -type f -name '*.h'
 }
 for d in client util snapshot minidump handler tools compat build; do copy_headers "$d"; done
 copy_headers third_party/mini_chromium/mini_chromium/base
@@ -40,8 +45,7 @@ if [ -f "$ROOT/handler/win/wer/crashpad_wer.cc" ]; then
 fi
 
 # Libraries and the tool_support object, keeping the obj/ tree so paths match a GN build.
-(cd "$ROOT/out/$OUT" && find obj -type f \( -name '*.a' -o -name '*.lib' -o -name 'tool_support.tool_support.o' -o -name 'tool_support.tool_support.obj' \) -print0) |
-  (cd "$ROOT/out/$OUT" && xargs -0 -I{} sh -c 'mkdir -p "$0/$(dirname "{}")" && cp "{}" "$0/{}"' "$PKG/out/release")
+copy_tree "$ROOT/out/$OUT" "$PKG/out/release" obj -type f \( -name '*.a' -o -name '*.lib' -o -name 'tool_support.tool_support.o' -o -name 'tool_support.tool_support.obj' \)
 # Test-only archives are dead weight.
 find "$PKG/out/release/obj" -type f \( -name '*test*' -o -name 'libgtest*' -o -name 'gmock*' -o -name '*fuzzer*' \) -delete
 [ -d "$ROOT/out/$OUT/gen" ] && cp -R "$ROOT/out/$OUT/gen" "$PKG/out/release/gen"
@@ -53,11 +57,15 @@ cp "$ROOT/LICENSE" "$PKG/LICENSE"
 
 # Windows hosts may expose a Store stub named python3 that only prints an install hint.
 PY=python3; python3 -c pass >/dev/null 2>&1 || PY=python
-$PY - "$PKG/PREBUILT.json" "$COMMIT" "$NAME" "$META" "$(cat "$ROOT/out/$OUT/args.gn")" <<'PY'
+# Any build-config workaround applied by build.sh shows up here (Crashpad sources are never patched).
+PATCHES=$(git -C "$ROOT/third_party/mini_chromium/mini_chromium" diff --name-only 2>/dev/null | tr '
+' ' ')
+$PY - "$PKG/PREBUILT.json" "$COMMIT" "$NAME" "$META" "$(cat "$ROOT/out/$OUT/args.gn")" "$PATCHES" <<'PY'
 import json, sys, datetime
-path, commit, name, meta, args = sys.argv[1:6]
+path, commit, name, meta, args, patches = sys.argv[1:7]
 doc = {"commit": commit, "name": name, "gn_args": args,
-       "built": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+       "built": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+       "buildConfigPatches": ["third_party/mini_chromium/mini_chromium/" + p for p in patches.split()]}
 doc.update(json.loads(meta))
 json.dump(doc, open(path, "w"), indent=2)
 PY

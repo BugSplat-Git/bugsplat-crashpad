@@ -26,6 +26,20 @@ git fetch --depth 1 origin "$COMMIT"
 git checkout -q "$COMMIT"
 gclient sync
 
+# mini_chromium's Android toolchain sets tool_prefix for 32-bit ARM and never reads it, and GN
+# treats an unused assignment as an error; 32-bit ARM cannot be configured without this one-line
+# not_needed(). Build-config only, no Crashpad source is touched; package.sh records it.
+if [[ "$ARGS" == *'target_os="android"'* && "$ARGS" == *'target_cpu="arm"'* ]]; then
+  python3 - third_party/mini_chromium/mini_chromium/build/config/BUILD.gn <<'PY'
+import io, sys
+p = sys.argv[1]; s = io.open(p, encoding="utf-8").read()
+anchor = '      tool_prefix = "arm-linux-androideabi"' + chr(10)
+fix = anchor + '      not_needed([ "tool_prefix" ])' + chr(10)
+if anchor in s and fix not in s:
+    io.open(p, "w", encoding="utf-8").write(s.replace(anchor, fix)); print("patched", p)
+PY
+fi
+
 mkdir -p "out/$OUT"
 printf '%s\n' "$ARGS" > "out/$OUT/args.gn"
 echo "--- out/$OUT/args.gn"; cat "out/$OUT/args.gn"; echo "---"

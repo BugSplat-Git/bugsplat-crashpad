@@ -71,12 +71,12 @@ jobs:
             builds: |
               win-arm64|is_debug=false target_cpu="arm64" extra_cflags="/MD"
             targets: client handler:crashpad_handler crashpad_wer snapshot minidump util
-          # ---- macOS universal (arm64 + x86_64 lipo'd) -------------------------------------------
+          # ---- macOS universal (arm64 + x86_64 lipo'd); 12.0 is the floor: mac_util.cc uses kIOMainPortDefault
           - name: macos-universal
             os: macos-15
             builds: |
-              mac-arm64|is_debug=false target_cpu="arm64" mac_deployment_target="11.5"
-              mac-x64|is_debug=false target_cpu="x64" mac_deployment_target="11.5"
+              mac-arm64|is_debug=false target_cpu="arm64" mac_deployment_target="12.0"
+              mac-x64|is_debug=false target_cpu="x64" mac_deployment_target="12.0"
             universal: mac-arm64 mac-x64
             targets: client handler:crashpad_handler snapshot minidump util
           # ---- Linux: socket transport so the handler never needs libcurl --------------------------
@@ -109,29 +109,29 @@ jobs:
             builds: |
               android-x64|is_debug=false target_os="android" target_cpu="x64" android_api_level=26 crashpad_http_transport_impl="socket"
             targets: client handler:crashpad_handler snapshot minidump util
-          # ---- iOS / tvOS: in-process client only (no handler targets exist on iOS) ----------------
+          # ---- iOS / tvOS: in-process client only (no handler targets exist on iOS); static libs need no signing
           - name: ios-device
             os: macos-15
             builds: |
-              ios-device-arm64|is_debug=false target_os="ios" target_cpu="arm64" target_environment="device" ios_deployment_target="14.0"
+              ios-device-arm64|is_debug=false target_os="ios" target_cpu="arm64" target_environment="device" ios_deployment_target="14.0" ios_enable_code_signing=false
             targets: client snapshot minidump util
           - name: ios-simulator
             os: macos-15
             builds: |
-              ios-sim-arm64|is_debug=false target_os="ios" target_cpu="arm64" target_environment="simulator" ios_deployment_target="14.0"
-              ios-sim-x64|is_debug=false target_os="ios" target_cpu="x64" target_environment="simulator" ios_deployment_target="14.0"
+              ios-sim-arm64|is_debug=false target_os="ios" target_cpu="arm64" target_environment="simulator" ios_deployment_target="14.0" ios_enable_code_signing=false
+              ios-sim-x64|is_debug=false target_os="ios" target_cpu="x64" target_environment="simulator" ios_deployment_target="14.0" ios_enable_code_signing=false
             universal: ios-sim-arm64 ios-sim-x64
             targets: client snapshot minidump util
           - name: tvos-device
             os: macos-15
             builds: |
-              tvos-device-arm64|is_debug=false target_os="ios" target_platform="tvos" target_cpu="arm64" target_environment="device" ios_deployment_target="14.0"
+              tvos-device-arm64|is_debug=false target_os="ios" target_platform="tvos" target_cpu="arm64" target_environment="device" ios_deployment_target="14.0" ios_enable_code_signing=false
             targets: client snapshot minidump util
           - name: tvos-simulator
             os: macos-15
             builds: |
-              tvos-sim-arm64|is_debug=false target_os="ios" target_platform="tvos" target_cpu="arm64" target_environment="simulator" ios_deployment_target="14.0"
-              tvos-sim-x64|is_debug=false target_os="ios" target_platform="tvos" target_cpu="x64" target_environment="simulator" ios_deployment_target="14.0"
+              tvos-sim-arm64|is_debug=false target_os="ios" target_platform="tvos" target_cpu="arm64" target_environment="simulator" ios_deployment_target="14.0" ios_enable_code_signing=false
+              tvos-sim-x64|is_debug=false target_os="ios" target_platform="tvos" target_cpu="x64" target_environment="simulator" ios_deployment_target="14.0" ios_enable_code_signing=false
             universal: tvos-sim-arm64 tvos-sim-x64
             targets: client snapshot minidump util
     runs-on: ${{ matrix.os }}
@@ -153,7 +153,7 @@ jobs:
           {
             echo "runner=${{ matrix.os }}"
             if [[ "$RUNNER_OS" == "macOS" ]]; then xcodebuild -version | tr '\n' ' '; echo; clang --version | head -1; fi
-            if [[ "$RUNNER_OS" == "Linux" ]]; then clang --version | head -1; ldd --version | head -1; fi
+            if [[ "$RUNNER_OS" == "Linux" ]]; then clang --version | head -1; ldd --version 2>/dev/null | head -1; fi
             if [[ "${{ matrix.android }}" == "true" ]]; then echo "ndk=$(sed -n 's/^Pkg.Revision *= *//p' "$ANDROID_NDK_LATEST_HOME/source.properties")"; fi
           } | tee toolchain.txt
 
