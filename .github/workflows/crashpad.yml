@@ -1,307 +1,271 @@
-name: Monthly Crashpad Build
+# Crashpad prebuilt farm.
+#
+# Builds Crashpad at ONE pinned commit for every platform bugsplat-native ships on, packages each
+# build as a sha256-pinned tarball (scripts/farm/package.sh) and publishes them as a GitHub
+# pre-release tagged crashpad-<commit7> together with crashpad.lock, which bugsplat-native's
+# cmake/FetchCrashpadPrebuilt.cmake reads. Bumping Crashpad = change CRASHPAD_COMMIT_PINNED below
+# (or pass a commit to workflow_dispatch), run the workflow, copy the new crashpad.lock into
+# bugsplat-native/cmake/.
+#
+# Toolchain notes (learned the hard way in bugsplat-native's CI):
+#  - the pinned Crashpad compiles as C++23, so runners need clang >= 17 / Xcode >= 16 / MSVC >= 14.43
+#  - on Windows the depot_tools launchers are .bat files; scripts/farm/build.ps1 drives them from
+#    pwsh one `cmd /c "call x.bat"` at a time so every exit code is checked
+#  - GN args go through args.gn, never shell quoting
+name: crashpad
 
 on:
-  schedule:
-    # Run on the 1st of every month at 2:00 AM UTC
-    - cron: "0 2 1 * *"
-  workflow_dispatch: # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      crashpad_commit:
+        description: Crashpad commit to build (defaults to the pinned CRASHPAD_COMMIT_PINNED)
+        required: false
+        default: ""
+      publish:
+        description: Publish a GitHub pre-release with the tarballs and crashpad.lock
+        type: boolean
+        default: true
+  pull_request:
+    paths:
+      - .github/workflows/crashpad.yml
+      - scripts/farm/**
+
+env:
+  CRASHPAD_COMMIT_PINNED: db44314646cbd0825a73b58dd2b7b5f4faca64a7   # 2026-09-07; bump deliberately
 
 jobs:
-  build-crashpad:
+  pin:
+    runs-on: ubuntu-24.04
+    outputs:
+      commit: ${{ steps.pin.outputs.commit }}
+      short: ${{ steps.pin.outputs.short }}
+    steps:
+      - id: pin
+        shell: bash
+        run: |
+          c="${{ github.event.inputs.crashpad_commit }}"
+          [ -n "$c" ] || c="$CRASHPAD_COMMIT_PINNED"
+          echo "commit=$c" >> "$GITHUB_OUTPUT"
+          echo "short=${c:0:7}" >> "$GITHUB_OUTPUT"
+          echo "Building Crashpad $c"
+
+  build:
+    needs: pin
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            platform: windows
-            script: scripts/build_crashpad_windows_msvc.ps1
-            artifact_path: third_party/crashpad/out/win-debug
-          - os: macos-latest
-            platform: macos
-            script: scripts/build_crashpad_macos.sh
-            artifact_path: third_party/crashpad/out/macos-debug
-          - os: ubuntu-latest
-            platform: linux
-            script: scripts/build_crashpad_linux.sh
-            artifact_path: third_party/crashpad/out/linux-debug
-
+          # ---- Windows: clang-cl from Crashpad's DEPS against the runner's MSVC STL (/MD) ---------
+          - name: windows-x64
+            os: windows-2022
+            builds: |
+              win-x64|is_debug=false target_cpu="x64" extra_cflags="/MD"
+            targets: client handler:crashpad_handler crashpad_wer snapshot minidump util
+          - name: windows-x86
+            os: windows-2022
+            builds: |
+              win-x86|is_debug=false target_cpu="x86" extra_cflags="/MD"
+            targets: client handler:crashpad_handler crashpad_wer snapshot minidump util
+          - name: windows-arm64
+            os: windows-2022
+            builds: |
+              win-arm64|is_debug=false target_cpu="arm64" extra_cflags="/MD"
+            targets: client handler:crashpad_handler crashpad_wer snapshot minidump util
+          # ---- macOS universal (arm64 + x86_64 lipo'd); 12.0 is the floor: mac_util.cc uses kIOMainPortDefault
+          - name: macos-universal
+            os: macos-15
+            builds: |
+              mac-arm64|is_debug=false target_cpu="arm64" mac_deployment_target="12.0"
+              mac-x64|is_debug=false target_cpu="x64" mac_deployment_target="12.0"
+            universal: mac-arm64 mac-x64
+            targets: client handler:crashpad_handler snapshot minidump util
+          # ---- Linux: socket transport so the handler never needs libcurl --------------------------
+          - name: linux-x86_64
+            os: ubuntu-24.04
+            builds: |
+              linux-x64|is_debug=false crashpad_http_transport_impl="socket"
+            targets: client handler:crashpad_handler snapshot minidump util
+          - name: linux-aarch64
+            os: ubuntu-24.04-arm
+            builds: |
+              linux-arm64|is_debug=false target_cpu="arm64" crashpad_http_transport_impl="socket"
+            targets: client handler:crashpad_handler snapshot minidump util
+          # ---- Android: NDK from the runner image, API 26 (bugsplat-android's minSdk) --------------
+          - name: android-arm64-v8a
+            os: ubuntu-24.04
+            android: true
+            builds: |
+              android-arm64|is_debug=false target_os="android" target_cpu="arm64" android_api_level=26 crashpad_http_transport_impl="socket"
+            targets: client handler:crashpad_handler snapshot minidump util
+          - name: android-armeabi-v7a
+            os: ubuntu-24.04
+            android: true
+            builds: |
+              android-arm|is_debug=false target_os="android" target_cpu="arm" android_api_level=26 crashpad_http_transport_impl="socket"
+            targets: client handler:crashpad_handler snapshot minidump util
+          - name: android-x86_64
+            os: ubuntu-24.04
+            android: true
+            builds: |
+              android-x64|is_debug=false target_os="android" target_cpu="x64" android_api_level=26 crashpad_http_transport_impl="socket"
+            targets: client handler:crashpad_handler snapshot minidump util
+          # ---- iOS / tvOS: in-process client only (no handler targets exist on iOS); static libs need no signing
+          - name: ios-device
+            os: macos-15
+            builds: |
+              ios-device-arm64|is_debug=false target_os="ios" target_cpu="arm64" target_environment="device" ios_deployment_target="14.0" ios_enable_code_signing=false
+            targets: client snapshot minidump util
+          - name: ios-simulator
+            os: macos-15
+            builds: |
+              ios-sim-arm64|is_debug=false target_os="ios" target_cpu="arm64" target_environment="simulator" ios_deployment_target="14.0" ios_enable_code_signing=false
+              ios-sim-x64|is_debug=false target_os="ios" target_cpu="x64" target_environment="simulator" ios_deployment_target="14.0" ios_enable_code_signing=false
+            universal: ios-sim-arm64 ios-sim-x64
+            targets: client snapshot minidump util
+          - name: tvos-device
+            os: macos-15
+            builds: |
+              tvos-device-arm64|is_debug=false target_os="ios" target_platform="tvos" target_cpu="arm64" target_environment="device" ios_deployment_target="14.0" ios_enable_code_signing=false
+            targets: client snapshot minidump util
+          - name: tvos-simulator
+            os: macos-15
+            builds: |
+              tvos-sim-arm64|is_debug=false target_os="ios" target_platform="tvos" target_cpu="arm64" target_environment="simulator" ios_deployment_target="14.0" ios_enable_code_signing=false
+              tvos-sim-x64|is_debug=false target_os="ios" target_platform="tvos" target_cpu="x64" target_environment="simulator" ios_deployment_target="14.0" ios_enable_code_signing=false
+            universal: tvos-sim-arm64 tvos-sim-x64
+            targets: client snapshot minidump util
     runs-on: ${{ matrix.os }}
-    name: Build Crashpad on ${{ matrix.platform }}
-
+    name: ${{ matrix.name }}
+    env:
+      CRASHPAD_COMMIT: ${{ needs.pin.outputs.commit }}
+      # Matrix strings go through env: the GN args carry double quotes that would break a shell
+      # or PowerShell literal if they were pasted into the script body.
+      BUILDS: ${{ matrix.builds }}
+      TARGETS: ${{ matrix.targets }}
+      UNIVERSAL: ${{ matrix.universal }}
+      NAME: ${{ matrix.name }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.x"
+      - name: Toolchain versions
+        shell: bash
+        run: |
+          {
+            echo "runner=${{ matrix.os }}"
+            if [[ "$RUNNER_OS" == "macOS" ]]; then xcodebuild -version | tr '\n' ' '; echo; clang --version | head -1; fi
+            if [[ "$RUNNER_OS" == "Linux" ]]; then clang --version | head -1; ldd --version 2>/dev/null | head -1; fi
+            if [[ "$RUNNER_OS" == "Windows" ]]; then
+              # Crashpad compiles with its own clang-cl but links against this Visual Studio's STL,
+              # which is what sets the consumer toolset floor.
+              echo "msvc=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -property installationVersion)"
+              echo "clang-cl=$(grep -o 'clang-llvmorg-[^/]*' "$GITHUB_WORKSPACE/work/crashpad/DEPS" 2>/dev/null | head -1 || true)"
+            fi
+            if [[ "${{ matrix.android }}" == "true" ]]; then echo "ndk=$(sed -n 's/^Pkg.Revision *= *//p' "$ANDROID_NDK_LATEST_HOME/source.properties")"; fi
+          } | tee toolchain.txt
 
-      - name: Install depot_tools (Windows)
-        if: ${{ matrix.platform == 'windows' }}
+      - name: Build (POSIX)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          chmod +x scripts/farm/*.sh
+          extra=""
+          if [[ "${{ matrix.android }}" == "true" ]]; then extra=" android_ndk_root=\"$ANDROID_NDK_LATEST_HOME\""; fi
+          while IFS='|' read -r out args; do
+            [ -n "$out" ] || continue
+            scripts/farm/build.sh "$GITHUB_WORKSPACE/work" "$CRASHPAD_COMMIT" "$out" "$args$extra" $TARGETS
+          done <<< "$BUILDS"
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          # Download and set up depot_tools for Windows
-          Invoke-WebRequest -Uri "https://storage.googleapis.com/chrome-infra/depot_tools.zip" -OutFile "depot_tools.zip"
-          Expand-Archive -Path "depot_tools.zip" -DestinationPath "depot_tools"
-          $env:PATH = "$PWD\depot_tools;$env:PATH"
-          echo "$PWD\depot_tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          # Initialize depot_tools
-          gclient
+          $lines = $env:BUILDS -split "`n" | Where-Object { $_.Trim() -ne "" }
+          foreach ($line in $lines) {
+            $out, $gnargs = $line -split '\|', 2
+            & scripts/farm/build.ps1 -Work "$env:GITHUB_WORKSPACE\work" -Commit $env:CRASHPAD_COMMIT -Out $out.Trim() -ArgsGn $gnargs.Trim() -Targets $env:TARGETS
+          }
 
-      - name: Install depot_tools (Unix)
-        if: ${{ matrix.platform != 'windows' }}
+      - name: Universal (lipo)
+        if: matrix.universal != ''
         shell: bash
         run: |
-          # Download and set up depot_tools for Unix systems
-          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-          export PATH="$PWD/depot_tools:$PATH"
-          echo "$PWD/depot_tools" >> $GITHUB_PATH
-          # Initialize depot_tools
-          gclient
+          set -- $UNIVERSAL
+          scripts/farm/lipo.sh "$GITHUB_WORKSPACE/work/crashpad" "$1" "$2" universal
 
-      - name: Install build dependencies (Linux)
-        if: ${{ matrix.platform == 'linux' }}
+      - name: Package
         shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential libcurl4-openssl-dev
+          if [ -n "$UNIVERSAL" ]; then out=universal; else out=$(head -1 <<< "$BUILDS" | cut -d'|' -f1); fi
+          py=python3; command -v python3 >/dev/null 2>&1 || py=python
+          meta=$($py -c 'import json; print(json.dumps({"toolchain": open("toolchain.txt").read().strip().splitlines()}))')
+          bash scripts/farm/package.sh "$GITHUB_WORKSPACE/work/crashpad" "$out" "$NAME" "$GITHUB_WORKSPACE/dist" "$meta"
+          ls -la dist
 
-      - name: Install build dependencies (macOS)
-        if: ${{ matrix.platform == 'macos' }}
-        shell: bash
-        run: |
-          # Install Xcode command line tools if not already installed
-          xcode-select --install || true
-
-      - name: Run build script (Windows)
-        if: ${{ matrix.platform == 'windows' }}
-        shell: pwsh
-        run: |
-          ${{ matrix.script }}
-
-      - name: Run build script (Unix)
-        if: ${{ matrix.platform != 'windows' }}
-        shell: bash
-        run: |
-          chmod +x ${{ matrix.script }}
-          ${{ matrix.script }}
-
-      - name: Prepare artifacts
-        shell: bash
-        run: |
-          # Create a directory for artifacts with debug and release subdirectories
-          mkdir -p artifacts/${{ matrix.platform }}/debug/lib
-          mkdir -p artifacts/${{ matrix.platform }}/debug/bin
-          mkdir -p artifacts/${{ matrix.platform }}/release/lib
-          mkdir -p artifacts/${{ matrix.platform }}/release/bin
-          mkdir -p artifacts/${{ matrix.platform }}/include/crashpad
-          mkdir -p artifacts/${{ matrix.platform }}/include/mini_chromium
-
-          # Set platform-specific paths
-          CRASHPAD_ROOT="third_party/crashpad"
-          
-          # Set debug and release output directories
-          if [ "${{ matrix.platform }}" == "windows" ]; then
-            DEBUG_OUT_DIR="third_party/crashpad/out/win-debug"
-            RELEASE_OUT_DIR="third_party/crashpad/out/win-release"
-          elif [ "${{ matrix.platform }}" == "macos" ]; then
-            DEBUG_OUT_DIR="third_party/crashpad/out/macos-debug"
-            RELEASE_OUT_DIR="third_party/crashpad/out/macos-release"
-          else # Linux
-            DEBUG_OUT_DIR="third_party/crashpad/out/linux-debug"
-            RELEASE_OUT_DIR="third_party/crashpad/out/linux-release"
-          fi
-
-          # Copy platform-specific debug libraries and executables
-          if [ "${{ matrix.platform }}" == "windows" ]; then
-            # Windows debug libraries
-            cp "$DEBUG_OUT_DIR/obj/client/client.lib" artifacts/${{ matrix.platform }}/debug/lib/
-            cp "$DEBUG_OUT_DIR/obj/client/common.lib" artifacts/${{ matrix.platform }}/debug/lib/
-            cp "$DEBUG_OUT_DIR/obj/util/util.lib" artifacts/${{ matrix.platform }}/debug/lib/
-            cp "$DEBUG_OUT_DIR/obj/third_party/mini_chromium/mini_chromium/base/base.lib" artifacts/${{ matrix.platform }}/debug/lib/
-            cp "$DEBUG_OUT_DIR/crashpad_handler.exe" artifacts/${{ matrix.platform }}/debug/bin/
-            # Windows release libraries
-            cp "$RELEASE_OUT_DIR/obj/client/client.lib" artifacts/${{ matrix.platform }}/release/lib/
-            cp "$RELEASE_OUT_DIR/obj/client/common.lib" artifacts/${{ matrix.platform }}/release/lib/
-            cp "$RELEASE_OUT_DIR/obj/util/util.lib" artifacts/${{ matrix.platform }}/release/lib/
-            cp "$RELEASE_OUT_DIR/obj/third_party/mini_chromium/mini_chromium/base/base.lib" artifacts/${{ matrix.platform }}/release/lib/
-            cp "$RELEASE_OUT_DIR/crashpad_handler.exe" artifacts/${{ matrix.platform }}/release/bin/
-          elif [ "${{ matrix.platform }}" == "macos" ]; then
-            # macOS debug libraries
-            cp "$DEBUG_OUT_DIR/obj/client/libclient.a" artifacts/${{ matrix.platform }}/debug/lib/
-            cp "$DEBUG_OUT_DIR/obj/client/libcommon.a" artifacts/${{ matrix.platform }}/debug/lib/
-            cp "$DEBUG_OUT_DIR/obj/util/libutil.a" artifacts/${{ matrix.platform }}/debug/lib/
-            cp "$DEBUG_OUT_DIR/obj/util/libmig_output.a" artifacts/${{ matrix.platform }}/debug/lib/
-            cp "$DEBUG_OUT_DIR/obj/third_party/mini_chromium/mini_chromium/base/libbase.a" artifacts/${{ matrix.platform }}/debug/lib/
-            cp "$DEBUG_OUT_DIR/crashpad_handler" artifacts/${{ matrix.platform }}/debug/bin/
-            # macOS release libraries
-            cp "$RELEASE_OUT_DIR/obj/client/libclient.a" artifacts/${{ matrix.platform }}/release/lib/
-            cp "$RELEASE_OUT_DIR/obj/client/libcommon.a" artifacts/${{ matrix.platform }}/release/lib/
-            cp "$RELEASE_OUT_DIR/obj/util/libutil.a" artifacts/${{ matrix.platform }}/release/lib/
-            cp "$RELEASE_OUT_DIR/obj/util/libmig_output.a" artifacts/${{ matrix.platform }}/release/lib/
-            cp "$RELEASE_OUT_DIR/obj/third_party/mini_chromium/mini_chromium/base/libbase.a" artifacts/${{ matrix.platform }}/release/lib/
-            cp "$RELEASE_OUT_DIR/crashpad_handler" artifacts/${{ matrix.platform }}/release/bin/
-          else # Linux
-            # Linux debug libraries
-            cp "$DEBUG_OUT_DIR/obj/client/libclient.a" artifacts/${{ matrix.platform }}/debug/lib/
-            cp "$DEBUG_OUT_DIR/obj/client/libcommon.a" artifacts/${{ matrix.platform }}/debug/lib/
-            cp "$DEBUG_OUT_DIR/obj/util/libutil.a" artifacts/${{ matrix.platform }}/debug/lib/
-            cp "$DEBUG_OUT_DIR/obj/third_party/mini_chromium/mini_chromium/base/libbase.a" artifacts/${{ matrix.platform }}/debug/lib/
-            cp "$DEBUG_OUT_DIR/crashpad_handler" artifacts/${{ matrix.platform }}/debug/bin/
-            # Linux release libraries
-            cp "$RELEASE_OUT_DIR/obj/client/libclient.a" artifacts/${{ matrix.platform }}/release/lib/
-            cp "$RELEASE_OUT_DIR/obj/client/libcommon.a" artifacts/${{ matrix.platform }}/release/lib/
-            cp "$RELEASE_OUT_DIR/obj/util/libutil.a" artifacts/${{ matrix.platform }}/release/lib/
-            cp "$RELEASE_OUT_DIR/obj/third_party/mini_chromium/mini_chromium/base/libbase.a" artifacts/${{ matrix.platform }}/release/lib/
-            cp "$RELEASE_OUT_DIR/crashpad_handler" artifacts/${{ matrix.platform }}/release/bin/
-          fi
-
-
-          # Recursively copy all .h files from crashpad, preserving directory structure
-          find "$CRASHPAD_ROOT" -type f -name '*.h' \
-            -exec bash -c 'src="$1"; dst="artifacts/${{ matrix.platform }}/include/crashpad/${1#${2}/}"; mkdir -p "$(dirname "$dst")"; cp "$src" "$dst"' _ '{}' "$CRASHPAD_ROOT" \;
-
-          # Recursively copy all .h files from mini_chromium, preserving directory structure
-          MINI_CHROMIUM_ROOT="$CRASHPAD_ROOT/third_party/mini_chromium/mini_chromium"
-          find "$MINI_CHROMIUM_ROOT" -type f -name '*.h' \
-            -exec bash -c 'src="$1"; dst="artifacts/${{ matrix.platform }}/include/mini_chromium/${1#${2}/}"; mkdir -p "$(dirname "$dst")"; cp "$src" "$dst"' _ '{}' "$MINI_CHROMIUM_ROOT" \;
-
-          # Verify required files exist
-          echo "Verifying debug artifact files..."
-          ls -la artifacts/${{ matrix.platform }}/debug/lib/
-          ls -la artifacts/${{ matrix.platform }}/debug/bin/
-          echo "Verifying release artifact files..."
-          ls -la artifacts/${{ matrix.platform }}/release/lib/
-          ls -la artifacts/${{ matrix.platform }}/release/bin/
-
-          # Create a build info file
-          echo "Build Date: $(date)" > artifacts/${{ matrix.platform }}/build_info.txt
-          echo "Platform: ${{ matrix.platform }}" >> artifacts/${{ matrix.platform }}/build_info.txt
-          echo "OS: ${{ matrix.os }}" >> artifacts/${{ matrix.platform }}/build_info.txt
-          echo "Commit: ${{ github.sha }}" >> artifacts/${{ matrix.platform }}/build_info.txt
-          echo "Configurations: Debug, Release" >> artifacts/${{ matrix.platform }}/build_info.txt
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: crashpad-${{ matrix.platform }}-${{ github.run_number }}
-          path: artifacts/${{ matrix.platform }}/
-          retention-days: 90
+          name: crashpad-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
 
-  create-release:
-    needs: build-crashpad
-    runs-on: ubuntu-latest
+  release:
+    needs: [pin, build]
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
-    # Release on every successful build
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
-
+    env:
+      TAG: crashpad-${{ needs.pin.outputs.short }}
+      COMMIT: ${{ needs.pin.outputs.commit }}
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          path: release-artifacts
+          path: artifacts
+          merge-multiple: true
 
-      - name: Get Crashpad version
-        id: crashpad-version
+      - name: Verify checksums and write crashpad.lock
+        shell: bash
         run: |
-          # We need to fetch Crashpad to get its version info
-          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-          export PATH="$PWD/depot_tools:$PATH"
-          mkdir -p temp-crashpad && cd temp-crashpad
-          fetch --no-history crashpad
-          cd crashpad
-          CRASHPAD_COMMIT=$(git rev-parse --short HEAD)
-          CRASHPAD_DATE=$(git show -s --format=%ci HEAD | cut -d' ' -f1 | tr -d '-')
-          echo "version=v${CRASHPAD_DATE}-${CRASHPAD_COMMIT}" >> $GITHUB_OUTPUT
-          echo "commit=${CRASHPAD_COMMIT}" >> $GITHUB_OUTPUT
-          echo "date=${CRASHPAD_DATE}" >> $GITHUB_OUTPUT
-          cd ../..
+          cd artifacts
+          sha256sum -c -- *.sha256
+          base="https://github.com/${{ github.repository }}/releases/download/$TAG"
+          python3 - "$COMMIT" "$TAG" "$base" <<'PY'
+          import json, sys, glob, os
+          commit, tag, base = sys.argv[1:4]
+          short = commit[:7]
+          artifacts = {}
+          for sha in sorted(glob.glob("*.tar.xz.sha256")):
+              digest, name = open(sha).read().split()
+              name = name.lstrip("*")
+              key = name[len(f"crashpad-{short}-"):-len(".tar.xz")]
+              artifacts[key] = {"file": name, "sha256": digest, "size": os.path.getsize(name), "url": f"{base}/{name}"}
+          lock = {"schemaVersion": 1, "commit": commit, "release": tag, "baseUrl": base, "artifacts": artifacts}
+          json.dump(lock, open("crashpad.lock", "w"), indent=2)
+          print(open("crashpad.lock").read())
+          PY
 
-      - name: Create release archives and checksums
-        run: |
-          cd release-artifacts
-          for dir in crashpad-*; do
-            platform=$(echo $dir | sed 's/crashpad-\(.*\)-[0-9]*/\1/')
-            archive="crashpad-${platform}-${{ steps.crashpad-version.outputs.version }}.tar.gz"
-            tar -czf "../${archive}" -C "$dir" .
-            # Generate checksum
-            cd ..
-            sha256sum "${archive}" > "${archive}.sha256"
-            cd release-artifacts
-          done
-          cd ..
-
-      - name: Get current date
-        id: current-date
-        run: |
-          echo "date=$(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_OUTPUT
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      - uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ steps.crashpad-version.outputs.version }}
-          name: Crashpad Build ${{ steps.crashpad-version.outputs.version }}
-          body: |
-            ## Crashpad Libraries - ${{ steps.crashpad-version.outputs.version }}
-            
-            Ready-to-use Crashpad libraries for all platforms, built from the latest Crashpad source.
-            
-            ### Quick Start
-            1. Download the archive for your platform below
-            2. Extract to your project directory
-            3. Point your build system to the extracted files
-            4. See the [sample project](https://github.com/${{ github.repository }}) for integration examples
-            
-            ### Platforms Included
-            - **Windows**: MSVC-compatible `.lib` files + `crashpad_handler.exe`
-            - **macOS**: Universal `.a` files + `crashpad_handler`
-            - **Linux**: GCC-compatible `.a` files + `crashpad_handler`
-            
-            ### Directory Structure
-            ```
-            crashpad-<platform>/
-            ├── debug/
-            │   ├── lib/           # Debug libraries
-            │   └── bin/           # Debug crashpad_handler
-            ├── release/
-            │   ├── lib/           # Release libraries  
-            │   └── bin/           # Release crashpad_handler
-            ├── include/
-            │   ├── crashpad/      # Crashpad headers
-            │   └── mini_chromium/ # Mini Chromium headers
-            └── build_info.txt     # Build metadata
-            ```
-            
-            ### Security Verification
-            Verify downloads using the provided `.sha256` files:
-            ```bash
-            # Linux/macOS
-            sha256sum -c crashpad-<platform>-*.tar.gz.sha256
-            
-            # Windows PowerShell
-            Get-FileHash crashpad-<platform>-*.tar.gz -Algorithm SHA256
-            ```
-            
-            ### Integration Tips
-            - Use **debug** libraries during development for better crash reporting
-            - Use **release** libraries for production builds
-            - Ensure `crashpad_handler` is deployed alongside your application
-            - See `build_info.txt` in each archive for detailed build information
-            
-            ---
-            **Build Details:**
-            - **Build Date**: ${{ steps.current-date.outputs.date }}
-            - **Crashpad Commit**: ${{ steps.crashpad-version.outputs.commit }}
-            - **Source Repository**: https://github.com/${{ github.repository }}
-            - **Workflow Run**: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          files: |
-            crashpad-*.tar.gz
-            crashpad-*.tar.gz.sha256
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: crashpad.lock
+          path: artifacts/crashpad.lock
+
+      - name: Publish pre-release
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true'
+        shell: bash
+        run: |
+          cd artifacts
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release delete "$TAG" --repo "${{ github.repository }}" --cleanup-tag --yes
+          fi
+          {
+            echo "Crashpad prebuilt libraries at commit \`$COMMIT\`, built by workflow run ${{ github.run_id }}."
+            echo
+            echo "Consumed by [bugsplat-native](https://github.com/BugSplat-Git/bugsplat-native) through \`crashpad.lock\` (\`cmake/FetchCrashpadPrebuilt.cmake\`)."
+            echo "Each tarball mirrors a Crashpad checkout: headers, \`out/release/obj/**\` static libraries, \`out/release/gen/**\`, \`PREBUILT.json\` with the exact GN args and toolchain."
+            echo
+            echo "| artifact | sha256 |"; echo "|---|---|"
+            for f in *.tar.xz; do echo "| $f | $(cut -d' ' -f1 "$f.sha256") |"; done
+          } > notes.md
+          gh release create "$TAG" --repo "${{ github.repository }}" --target "$GITHUB_SHA" --prerelease \
+            --title "Crashpad $TAG" --notes-file notes.md *.tar.xz *.sha256 crashpad.lock
+          echo "https://github.com/${{ github.repository }}/releases/tag/$TAG"
