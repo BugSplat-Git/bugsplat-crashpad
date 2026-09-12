@@ -12,6 +12,41 @@
 
 <br/>
 
+# Crashpad prebuilt farm (used by bugsplat-native)
+
+`.github/workflows/crashpad.yml` builds Crashpad at **one pinned commit** (`CRASHPAD_COMMIT_PINNED`)
+for every platform [bugsplat-native](https://github.com/BugSplat-Git/bugsplat-native) ships on and
+publishes the result as a GitHub pre-release tagged `crashpad-<commit7>`:
+
+| artifact | runner / toolchain | notes |
+|---|---|---|
+| `windows-x64`, `windows-x86`, `windows-arm64` | windows-2022, Crashpad's clang-cl against the runner's MSVC STL, `/MD` | consumers need MSVC toolset >= 14.44; includes `crashpad_wer` and the WER helper source |
+| `macos-universal` | macos-15 / Xcode 16, arm64 + x86_64 lipo'd | `mac_deployment_target=12.0` (the floor: `kIOMainPortDefault`) |
+| `linux-x86_64`, `linux-aarch64` | ubuntu-24.04 / ubuntu-24.04-arm, clang 18 | `crashpad_http_transport_impl=socket`, no libcurl |
+| `android-arm64-v8a`, `android-armeabi-v7a`, `android-x86_64` | ubuntu-24.04, the image's NDK (recorded in `PREBUILT.json`) | `android_api_level=26`; 32-bit ARM needs a one-line GN `not_needed()` workaround that `scripts/farm/build.sh` applies and `PREBUILT.json` records |
+| `ios-device`, `ios-simulator`, `tvos-device`, `tvos-simulator` | macos-15 / Xcode 16; simulators are arm64 + x86_64 | in-process client libraries only, `ios_deployment_target=14.0` |
+
+Each `crashpad-<commit7>-<artifact>.tar.xz` mirrors a Crashpad checkout, so a consumer's build
+glue is identical for a prebuilt and a GN build: public headers (`client/`, `util/`, `snapshot/`,
+`minidump/`, `handler/`, `tools/`, `compat/`, `build/`, mini_chromium `base/` + `build/`, lss),
+`handler/win/wer/crashpad_wer.cc`, `out/release/obj/**` static libraries plus the `tool_support`
+object, `out/release/gen/**`, the reference `crashpad_handler`, `args.gn`, `LICENSE` and
+`PREBUILT.json` (commit, GN args, toolchain, any build-config patch). Every tarball ships with a
+`.sha256`; the release job re-verifies all of them and writes `crashpad.lock` (commit, per-artifact
+file/sha256/size/url), which bugsplat-native pins in `cmake/crashpad.lock` and consumes through
+`cmake/FetchCrashpadPrebuilt.cmake`. The lock of the current pin is also committed here as
+[`crashpad.lock`](./crashpad.lock).
+
+**Bumping Crashpad** (quarterly, or for a Crashpad security fix): change `CRASHPAD_COMMIT_PINNED`
+(or pass `crashpad_commit` to *Run workflow*), run the workflow, check the pre-release, copy its
+`crashpad.lock` into bugsplat-native and this repo, let bugsplat-native's `prebuilt-smoke`
+workflow prove the desktop platforms, then promote the pre-release. Pull requests touching the
+workflow or `scripts/farm/**` build everything without publishing.
+
+The scripts are reusable by hand: `scripts/farm/build.sh <work> <commit> <out> "<args.gn>" <targets>`
+(`build.ps1` on Windows), `scripts/farm/lipo.sh` to merge two out dirs, and
+`scripts/farm/package.sh <crashpad> <out> <artifact> <dest>` to produce the tarball and its checksum.
+
 # MyCMakeCrasher Project
 
 A cross-platform application demonstrating Crashpad integration with CMake.
