@@ -154,6 +154,12 @@ jobs:
             echo "runner=${{ matrix.os }}"
             if [[ "$RUNNER_OS" == "macOS" ]]; then xcodebuild -version | tr '\n' ' '; echo; clang --version | head -1; fi
             if [[ "$RUNNER_OS" == "Linux" ]]; then clang --version | head -1; ldd --version 2>/dev/null | head -1; fi
+            if [[ "$RUNNER_OS" == "Windows" ]]; then
+              # Crashpad compiles with its own clang-cl but links against this Visual Studio's STL,
+              # which is what sets the consumer toolset floor.
+              echo "msvc=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -property installationVersion)"
+              echo "clang-cl=$(grep -o 'clang-llvmorg-[^/]*' "$GITHUB_WORKSPACE/work/crashpad/DEPS" 2>/dev/null | head -1 || true)"
+            fi
             if [[ "${{ matrix.android }}" == "true" ]]; then echo "ndk=$(sed -n 's/^Pkg.Revision *= *//p' "$ANDROID_NDK_LATEST_HOME/source.properties")"; fi
           } | tee toolchain.txt
 
