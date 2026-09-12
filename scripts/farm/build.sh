@@ -16,7 +16,6 @@ if [ ! -d "$WORK/depot_tools" ]; then
   git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$WORK/depot_tools"
 fi
 export PATH="$WORK/depot_tools:$PATH"
-export DEPOT_TOOLS_UPDATE=0
 gclient --version >/dev/null   # bootstraps depot_tools' own python/ninja/gn
 
 if [ ! -d "$WORK/crashpad" ]; then

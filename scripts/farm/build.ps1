@@ -21,7 +21,6 @@ function Invoke-Native([string]$Cmd) {
 }
 
 $env:DEPOT_TOOLS_WIN_TOOLCHAIN = "0"
-$env:DEPOT_TOOLS_UPDATE = "0"
 git config --global depot-tools.allowGlobalGitConfig false
 
 New-Item -ItemType Directory -Force $Work | Out-Null

@@ -138,6 +138,12 @@ jobs:
     name: ${{ matrix.name }}
     env:
       CRASHPAD_COMMIT: ${{ needs.pin.outputs.commit }}
+      # Matrix strings go through env: the GN args carry double quotes that would break a shell
+      # or PowerShell literal if they were pasted into the script body.
+      BUILDS: ${{ matrix.builds }}
+      TARGETS: ${{ matrix.targets }}
+      UNIVERSAL: ${{ matrix.universal }}
+      NAME: ${{ matrix.name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -160,33 +166,33 @@ jobs:
           if [[ "${{ matrix.android }}" == "true" ]]; then extra=" android_ndk_root=\"$ANDROID_NDK_LATEST_HOME\""; fi
           while IFS='|' read -r out args; do
             [ -n "$out" ] || continue
-            scripts/farm/build.sh "$GITHUB_WORKSPACE/work" "$CRASHPAD_COMMIT" "$out" "$args$extra" ${{ matrix.targets }}
-          done <<< "${{ matrix.builds }}"
+            scripts/farm/build.sh "$GITHUB_WORKSPACE/work" "$CRASHPAD_COMMIT" "$out" "$args$extra" $TARGETS
+          done <<< "$BUILDS"
 
       - name: Build (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $lines = "${{ matrix.builds }}" -split "`n" | Where-Object { $_.Trim() -ne "" }
+          $lines = $env:BUILDS -split "`n" | Where-Object { $_.Trim() -ne "" }
           foreach ($line in $lines) {
             $out, $gnargs = $line -split '\|', 2
-            & scripts/farm/build.ps1 -Work "$env:GITHUB_WORKSPACE\work" -Commit $env:CRASHPAD_COMMIT -Out $out.Trim() -ArgsGn $gnargs.Trim() -Targets "${{ matrix.targets }}"
+            & scripts/farm/build.ps1 -Work "$env:GITHUB_WORKSPACE\work" -Commit $env:CRASHPAD_COMMIT -Out $out.Trim() -ArgsGn $gnargs.Trim() -Targets $env:TARGETS
           }
 
       - name: Universal (lipo)
         if: matrix.universal != ''
         shell: bash
         run: |
-          set -- ${{ matrix.universal }}
+          set -- $UNIVERSAL
           scripts/farm/lipo.sh "$GITHUB_WORKSPACE/work/crashpad" "$1" "$2" universal
 
       - name: Package
         shell: bash
         run: |
-          if [ -n "${{ matrix.universal }}" ]; then out=universal; else out=$(head -1 <<< "${{ matrix.builds }}" | cut -d'|' -f1); fi
+          if [ -n "$UNIVERSAL" ]; then out=universal; else out=$(head -1 <<< "$BUILDS" | cut -d'|' -f1); fi
           py=python3; command -v python3 >/dev/null 2>&1 || py=python
           meta=$($py -c 'import json; print(json.dumps({"toolchain": open("toolchain.txt").read().strip().splitlines()}))')
-          bash scripts/farm/package.sh "$GITHUB_WORKSPACE/work/crashpad" "$out" "${{ matrix.name }}" "$GITHUB_WORKSPACE/dist" "$meta"
+          bash scripts/farm/package.sh "$GITHUB_WORKSPACE/work/crashpad" "$out" "$NAME" "$GITHUB_WORKSPACE/dist" "$meta"
           ls -la dist
 
       - uses: actions/upload-artifact@v4
