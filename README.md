@@ -150,3 +150,7 @@ Click the value in the `ID` column to see the report's stack trace and associate
 <img width="1728" alt="image" src="https://github.com/user-attachments/assets/da7bfbbb-7340-46ad-8d33-5e6ef03052e7" />
 
 Thanks for using BugSplat!
+
+## License
+
+MIT, see [LICENSE](./LICENSE). Crashpad, which this project downloads and builds, is Apache-2.0.
