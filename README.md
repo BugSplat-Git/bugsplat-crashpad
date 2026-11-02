@@ -34,13 +34,13 @@ object, `out/release/gen/**`, the reference `crashpad_handler`, `args.gn`, `LICE
 `third_party_licenses/` (the license of every third-party component the tarball ships: mini_chromium
 and lss everywhere, getopt and zlib on Windows, listed in `third_party_licenses/README`) and
 `PREBUILT.json` (commit, GN args, toolchain, any build-config patch). Every tarball ships with a
-`.sha256`; the release job re-verifies all of them and writes `crashpad.lock` (commit, per-artifact
+`.sha256`; the `lock` job re-verifies all of them and writes `crashpad.lock` (commit, per-artifact
 file/sha256/size/url), which bugsplat-native pins in `cmake/crashpad.lock` and consumes through
 `cmake/FetchCrashpadPrebuilt.cmake`. The lock of the current pin is also committed here as
 [`crashpad.lock`](./crashpad.lock).
 
 **Bumping Crashpad** (quarterly, or for a Crashpad security fix): change `CRASHPAD_COMMIT_PINNED`
-(or pass `crashpad_commit` to *Run workflow*), run the workflow, check the pre-release, copy its
+(or pass a full 40-character commit SHA as `crashpad_commit` to *Run workflow*), run the workflow, check the pre-release, copy its
 `crashpad.lock` into bugsplat-native and this repo, let bugsplat-native's `prebuilt-smoke`
 workflow prove the desktop platforms, then promote the pre-release. Pull requests touching the
 workflow or `scripts/farm/**` build everything without publishing.

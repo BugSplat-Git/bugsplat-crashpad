@@ -30,6 +30,10 @@ on:
       - .github/workflows/crashpad.yml
       - scripts/farm/**
 
+# Read-only by default; only the publish job (workflow_dispatch only) gets contents: write.
+permissions:
+  contents: read
+
 env:
   CRASHPAD_COMMIT_PINNED: db44314646cbd0825a73b58dd2b7b5f4faca64a7   # 2026-09-07; bump deliberately
 
@@ -42,9 +46,16 @@ jobs:
     steps:
       - id: pin
         shell: bash
+        env:
+          INPUT_COMMIT: ${{ github.event.inputs.crashpad_commit }}
         run: |
-          c="${{ github.event.inputs.crashpad_commit }}"
-          [ -n "$c" ] || c="$CRASHPAD_COMMIT_PINNED"
+          # Passed through env, never interpolated into the script; tags and lock entries are
+          # named from c[:7], so only a full commit SHA is accepted (not a branch name).
+          c="${INPUT_COMMIT:-$CRASHPAD_COMMIT_PINNED}"
+          if ! [[ "$c" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::crashpad_commit must be a full 40-character commit SHA, got '$c'"
+            exit 1
+          fi
           echo "commit=$c" >> "$GITHUB_OUTPUT"
           echo "short=${c:0:7}" >> "$GITHUB_OUTPUT"
           echo "Building Crashpad $c"
@@ -165,7 +176,6 @@ jobs:
               # Crashpad compiles with its own clang-cl but links against this Visual Studio's STL,
               # which is what sets the consumer toolset floor.
               echo "msvc=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -property installationVersion)"
-              echo "clang-cl=$(grep -o 'clang-llvmorg-[^/]*' "$GITHUB_WORKSPACE/work/crashpad/DEPS" 2>/dev/null | head -1 || true)"
             fi
             if [[ "${{ matrix.android }}" == "true" ]]; then echo "ndk=$(sed -n 's/^Pkg.Revision *= *//p' "$ANDROID_NDK_LATEST_HOME/source.properties")"; fi
           } | tee toolchain.txt
@@ -192,6 +202,15 @@ jobs:
             & scripts/farm/build.ps1 -Work "$env:GITHUB_WORKSPACE\work" -Commit $env:CRASHPAD_COMMIT -Out $out.Trim() -ArgsGn $gnargs.Trim() -Targets $env:TARGETS
           }
 
+      - name: Record clang-cl revision (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          # Crashpad's DEPS pins the clang-cl it builds with; it only exists after the checkout.
+          rev=$(grep -o "clang-llvmorg-[^/'\"]*" "$GITHUB_WORKSPACE/work/crashpad/DEPS" | head -1 | sed 's/\.tar\.xz$//' || true)
+          [ -n "$rev" ] || echo "::warning::clang-cl revision not found in Crashpad's DEPS"
+          echo "clang-cl=$rev" | tee -a toolchain.txt
+
       - name: Universal (lipo)
         if: matrix.universal != ''
         shell: bash
@@ -215,15 +234,13 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  release:
+  # Verifies every tarball and writes crashpad.lock on every run, with the read-only token.
+  lock:
     needs: [pin, build]
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write
     env:
       TAG: crashpad-${{ needs.pin.outputs.short }}
       COMMIT: ${{ needs.pin.outputs.commit }}
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -256,11 +273,28 @@ jobs:
           name: crashpad.lock
           path: artifacts/crashpad.lock
 
+  # The only job with a write token, and it never runs for pull requests.
+  publish:
+    needs: [pin, lock]
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      TAG: crashpad-${{ needs.pin.outputs.short }}
+      COMMIT: ${{ needs.pin.outputs.commit }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
       - name: Publish pre-release
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true'
         shell: bash
         run: |
           cd artifacts
+          sha256sum -c -- *.sha256
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release delete "$TAG" --repo "${{ github.repository }}" --cleanup-tag --yes
           fi
