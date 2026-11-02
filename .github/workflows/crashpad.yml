@@ -49,8 +49,15 @@ jobs:
           echo "short=${c:0:7}" >> "$GITHUB_OUTPUT"
           echo "Building Crashpad $c"
 
+  package-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test scripts/farm/package.sh
+        run: bash scripts/farm/test_package.sh
+
   build:
-    needs: pin
+    needs: [pin, package-test]
     strategy:
       fail-fast: false
       matrix:
