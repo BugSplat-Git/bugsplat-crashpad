@@ -15,6 +15,8 @@
 #     out/release/gen/**                                                  generated headers
 #     out/release/{crashpad_handler,crashpad_wer.dll}                     reference binaries, when built
 #     PREBUILT.json                                                       commit, platform, toolchain, gn args
+#     LICENSE, third_party_licenses/<component>/                         Crashpad's license, then each shipped
+#                                                                         third-party component's
 set -euo pipefail
 
 ROOT=$1; OUT=$2; NAME=$3; DEST=$4; META=${5:-'{}'}
@@ -54,6 +56,28 @@ for bin in crashpad_handler crashpad_handler.exe crashpad_wer.dll crashpad_wer.l
 done
 cp "$ROOT/out/$OUT/args.gn" "$PKG/out/release/args.gn"
 cp "$ROOT/LICENSE" "$PKG/LICENSE"
+
+# Third-party code in the tarball (headers copied above, or static libraries built from it) ships
+# with its license: mini_chromium and lss everywhere, getopt and zlib on Windows. Each component's
+# README.crashpad names its license file; packaging fails if a shipped component has none.
+THIRD_PARTY=$(for d in "$PKG/third_party" "$PKG/out/release/obj/third_party"; do
+  if [ -d "$d" ]; then ls "$d"; fi
+done | sort -u)
+for name in $THIRD_PARTY; do
+  readme="$ROOT/third_party/$name/README.crashpad"
+  license=; file=
+  if [ -f "$readme" ]; then
+    license=$(tr -d '\r' < "$readme" | sed -n 's/^License: *//p' | head -1)
+    file=$(tr -d '\r' < "$readme" | sed -n 's/^License File: *//p' | head -1)
+  fi
+  if [ -z "$license" ] || [ -z "$file" ] || [ ! -f "$ROOT/third_party/$name/$file" ]; then
+    echo "package.sh: third_party/$name is shipped but has no license file named in README.crashpad" >&2
+    exit 1
+  fi
+  mkdir -p "$PKG/third_party_licenses/$name"
+  cp "$ROOT/third_party/$name/$file" "$PKG/third_party_licenses/$name/"
+  echo "$name: $license ($file)" >> "$PKG/third_party_licenses/README"
+done
 
 # Windows hosts may expose a Store stub named python3 that only prints an install hint.
 PY=python3; python3 -c pass >/dev/null 2>&1 || PY=python

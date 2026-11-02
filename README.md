@@ -30,7 +30,9 @@ Each `crashpad-<commit7>-<artifact>.tar.xz` mirrors a Crashpad checkout, so a co
 glue is identical for a prebuilt and a GN build: public headers (`client/`, `util/`, `snapshot/`,
 `minidump/`, `handler/`, `tools/`, `compat/`, `build/`, mini_chromium `base/` + `build/`, lss),
 `handler/win/wer/crashpad_wer.cc`, `out/release/obj/**` static libraries plus the `tool_support`
-object, `out/release/gen/**`, the reference `crashpad_handler`, `args.gn`, `LICENSE` and
+object, `out/release/gen/**`, the reference `crashpad_handler`, `args.gn`, `LICENSE`,
+`third_party_licenses/` (the license of every third-party component the tarball ships: mini_chromium
+and lss everywhere, getopt and zlib on Windows, listed in `third_party_licenses/README`) and
 `PREBUILT.json` (commit, GN args, toolchain, any build-config patch). Every tarball ships with a
 `.sha256`; the release job re-verifies all of them and writes `crashpad.lock` (commit, per-artifact
 file/sha256/size/url), which bugsplat-native pins in `cmake/crashpad.lock` and consumes through
@@ -46,6 +48,8 @@ workflow or `scripts/farm/**` build everything without publishing.
 The scripts are reusable by hand: `scripts/farm/build.sh <work> <commit> <out> "<args.gn>" <targets>`
 (`build.ps1` on Windows), `scripts/farm/lipo.sh` to merge two out dirs, and
 `scripts/farm/package.sh <crashpad> <out> <artifact> <dest>` to produce the tarball and its checksum.
+`scripts/farm/test_package.sh` tests `package.sh` against a fake checkout; CI runs it before the
+builds.
 
 # MyCMakeCrasher Project
 
