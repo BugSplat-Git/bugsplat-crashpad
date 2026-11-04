@@ -14,9 +14,12 @@
 
 # Crashpad prebuilt farm (used by bugsplat-native)
 
-`.github/workflows/crashpad.yml` builds Crashpad at **one pinned commit** (`CRASHPAD_COMMIT_PINNED`)
-for every platform [bugsplat-native](https://github.com/BugSplat-Git/bugsplat-native) ships on and
-publishes the result as a GitHub pre-release tagged `crashpad-<commit7>`:
+`.github/workflows/crashpad.yml` builds Crashpad at **one pinned commit** (`CRASHPAD_COMMIT_PINNED`),
+with depot_tools pinned too (`DEPOT_TOOLS_COMMIT`), for every platform
+[bugsplat-native](https://github.com/BugSplat-Git/bugsplat-native) ships on and publishes the result
+as a GitHub pre-release tagged `crashpad-<commit7>-<run number>`. A published release is never
+replaced: rebuilding the same commit publishes a new tag, and `crashpad.lock` keeps pointing at the
+old one until it is bumped.
 
 | artifact | runner / toolchain | notes |
 |---|---|---|
@@ -33,7 +36,7 @@ glue is identical for a prebuilt and a GN build: public headers (`client/`, `uti
 object, `out/release/gen/**`, the reference `crashpad_handler`, `args.gn`, `LICENSE`,
 `third_party_licenses/` (the license of every third-party component the tarball ships: mini_chromium
 and lss everywhere, getopt and zlib on Windows, listed in `third_party_licenses/README`) and
-`PREBUILT.json` (commit, GN args, toolchain, any build-config patch). Every tarball ships with a
+`PREBUILT.json` (commit, GN args, toolchain including the depot_tools commit, any build-config patch). Every tarball ships with a
 `.sha256`; the `lock` job re-verifies all of them and writes `crashpad.lock` (commit, per-artifact
 file/sha256/size/url), which bugsplat-native pins in `cmake/crashpad.lock` and consumes through
 `cmake/FetchCrashpadPrebuilt.cmake`. The lock of the current pin is also committed here as
@@ -46,10 +49,10 @@ workflow prove the desktop platforms, then promote the pre-release. Pull request
 workflow or `scripts/farm/**` build everything without publishing.
 
 The scripts are reusable by hand: `scripts/farm/build.sh <work> <commit> <out> "<args.gn>" <targets>`
-(`build.ps1` on Windows), `scripts/farm/lipo.sh` to merge two out dirs, and
-`scripts/farm/package.sh <crashpad> <out> <artifact> <dest>` to produce the tarball and its checksum.
-`scripts/farm/test_package.sh` tests `package.sh` against a fake checkout; CI runs it before the
-builds.
+(`build.ps1` on Windows; both need `DEPOT_TOOLS_COMMIT` set), `scripts/farm/lipo.sh` to merge two
+out dirs, and `scripts/farm/package.sh <crashpad> <out> <artifact> <dest>` to produce the tarball and
+its checksum. `scripts/farm/test_package.sh` and `scripts/farm/test_lipo.sh` (macOS) test them
+against fake builds; CI runs both before the builds.
 
 # MyCMakeCrasher Project
 

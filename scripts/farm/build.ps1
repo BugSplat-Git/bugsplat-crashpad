@@ -1,10 +1,8 @@
-# Build Crashpad at a pinned commit with GN + depot_tools on Windows.
+# Builds Crashpad at -Commit into <Work>\crashpad\out\<Out> with depot_tools at
+# $env:DEPOT_TOOLS_COMMIT. depot_tools' launchers are .bat files, so each runs in its own cmd: a
+# launcher ending in a bare `exit` can't end this script, and every exit code is checked.
 #
 #   build.ps1 -Work <dir> -Commit <sha> -Out <name> -ArgsGn "<args.gn contents>" -Targets "client ..."
-#
-# depot_tools' launchers are .bat files. Each one runs in its own cmd so a launcher that ends with
-# a bare `exit` cannot swallow the rest of the script, and every exit code is checked. GN args go
-# through args.gn instead of shell quoting.
 param(
   [Parameter(Mandatory)] [string] $Work,
   [Parameter(Mandatory)] [string] $Commit,
@@ -20,15 +18,24 @@ function Invoke-Native([string]$Cmd) {
   if ($LASTEXITCODE -ne 0) { throw "failed ($LASTEXITCODE): $Cmd" }
 }
 
+if (-not $env:DEPOT_TOOLS_COMMIT) { throw "set DEPOT_TOOLS_COMMIT to the depot_tools commit to build with" }
 $env:DEPOT_TOOLS_WIN_TOOLCHAIN = "0"
 git config --global depot-tools.allowGlobalGitConfig false
 
 New-Item -ItemType Directory -Force $Work | Out-Null
 $Work = (Resolve-Path $Work).Path
-if (-not (Test-Path "$Work\depot_tools")) {
-  Invoke-Native "git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git $Work\depot_tools"
+$DepotTools = "$Work\depot_tools"
+if (-not (Test-Path $DepotTools)) {
+  Invoke-Native "git init -q $DepotTools"
+  Invoke-Native "git -C $DepotTools remote add origin https://chromium.googlesource.com/chromium/tools/depot_tools.git"
 }
-$env:PATH = "$Work\depot_tools;$env:PATH"
+Invoke-Native "git -C $DepotTools fetch -q --depth 1 origin $env:DEPOT_TOOLS_COMMIT"
+Invoke-Native "git -C $DepotTools checkout -q FETCH_HEAD"
+# Otherwise every gclient call moves depot_tools to origin/main.
+$env:DEPOT_TOOLS_UPDATE = "0"
+$env:PATH = "$DepotTools;$env:PATH"
+Invoke-Native "call $DepotTools\cipd_bin_setup.bat"
+Invoke-Native "call $DepotTools\bootstrap\win_tools.bat"
 Invoke-Native "call gclient.bat --version"
 
 if (-not (Test-Path "$Work\crashpad")) {
@@ -41,7 +48,6 @@ Invoke-Native "git checkout -q $Commit"
 Invoke-Native "call gclient.bat sync"
 
 New-Item -ItemType Directory -Force "out\$Out" | Out-Null
-# One assignment per line; GN accepts them on one line too but this reads better in the log.
 $lines = $ArgsGn -split '\s+(?=[A-Za-z_][A-Za-z0-9_]*=)'
 Set-Content -Path "out\$Out\args.gn" -Value ($lines -join "`n")
 Write-Host "--- out\$Out\args.gn"; Get-Content "out\$Out\args.gn"; Write-Host "---"

@@ -1,17 +1,4 @@
-# Crashpad prebuilt farm.
-#
-# Builds Crashpad at ONE pinned commit for every platform bugsplat-native ships on, packages each
-# build as a sha256-pinned tarball (scripts/farm/package.sh) and publishes them as a GitHub
-# pre-release tagged crashpad-<commit7> together with crashpad.lock, which bugsplat-native's
-# cmake/FetchCrashpadPrebuilt.cmake reads. Bumping Crashpad = change CRASHPAD_COMMIT_PINNED below
-# (or pass a commit to workflow_dispatch), run the workflow, copy the new crashpad.lock into
-# bugsplat-native/cmake/.
-#
-# Toolchain notes (learned the hard way in bugsplat-native's CI):
-#  - the pinned Crashpad compiles as C++23, so runners need clang >= 17 / Xcode >= 16 / MSVC >= 14.43
-#  - on Windows the depot_tools launchers are .bat files; scripts/farm/build.ps1 drives them from
-#    pwsh one `cmd /c "call x.bat"` at a time so every exit code is checked
-#  - GN args go through args.gn, never shell quoting
+# Builds the Crashpad prebuilts bugsplat-native consumes; see README.md.
 name: crashpad
 
 on:
@@ -30,34 +17,32 @@ on:
       - .github/workflows/crashpad.yml
       - scripts/farm/**
 
-# Read-only by default; only the publish job (workflow_dispatch only) gets contents: write.
 permissions:
   contents: read
 
 env:
-  CRASHPAD_COMMIT_PINNED: db44314646cbd0825a73b58dd2b7b5f4faca64a7   # 2026-09-07; bump deliberately
+  CRASHPAD_COMMIT_PINNED: db44314646cbd0825a73b58dd2b7b5f4faca64a7   # 2026-09-07
+  DEPOT_TOOLS_COMMIT: 006c1455f9ac26d03cafdf337003fdc3144dbff3       # 2026-11-04
 
 jobs:
   pin:
     runs-on: ubuntu-24.04
     outputs:
       commit: ${{ steps.pin.outputs.commit }}
-      short: ${{ steps.pin.outputs.short }}
+      tag: ${{ steps.pin.outputs.tag }}
     steps:
       - id: pin
         shell: bash
         env:
           INPUT_COMMIT: ${{ github.event.inputs.crashpad_commit }}
         run: |
-          # Passed through env, never interpolated into the script; tags and lock entries are
-          # named from c[:7], so only a full commit SHA is accepted (not a branch name).
           c="${INPUT_COMMIT:-$CRASHPAD_COMMIT_PINNED}"
           if ! [[ "$c" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::crashpad_commit must be a full 40-character commit SHA, got '$c'"
             exit 1
           fi
           echo "commit=$c" >> "$GITHUB_OUTPUT"
-          echo "short=${c:0:7}" >> "$GITHUB_OUTPUT"
+          echo "tag=crashpad-${c:0:7}-$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
           echo "Building Crashpad $c"
 
   package-test:
@@ -67,13 +52,19 @@ jobs:
       - name: Test scripts/farm/package.sh
         run: bash scripts/farm/test_package.sh
 
+  lipo-test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test scripts/farm/lipo.sh
+        run: bash scripts/farm/test_lipo.sh
+
   build:
-    needs: [pin, package-test]
+    needs: [pin, package-test, lipo-test]
     strategy:
       fail-fast: false
       matrix:
         include:
-          # ---- Windows: clang-cl from Crashpad's DEPS against the runner's MSVC STL (/MD) ---------
           - name: windows-x64
             os: windows-2022
             builds: |
@@ -89,7 +80,6 @@ jobs:
             builds: |
               win-arm64|is_debug=false target_cpu="arm64" extra_cflags="/MD"
             targets: client handler:crashpad_handler crashpad_wer snapshot minidump util
-          # ---- macOS universal (arm64 + x86_64 lipo'd); 12.0 is the floor: mac_util.cc uses kIOMainPortDefault
           - name: macos-universal
             os: macos-15
             builds: |
@@ -97,7 +87,6 @@ jobs:
               mac-x64|is_debug=false target_cpu="x64" mac_deployment_target="12.0"
             universal: mac-arm64 mac-x64
             targets: client handler:crashpad_handler snapshot minidump util
-          # ---- Linux: socket transport so the handler never needs libcurl --------------------------
           - name: linux-x86_64
             os: ubuntu-24.04
             builds: |
@@ -108,7 +97,7 @@ jobs:
             builds: |
               linux-arm64|is_debug=false target_cpu="arm64" crashpad_http_transport_impl="socket"
             targets: client handler:crashpad_handler snapshot minidump util
-          # ---- Android: NDK from the runner image, API 26 (bugsplat-android's minSdk) --------------
+          # API 26 is bugsplat-android's minSdk.
           - name: android-arm64-v8a
             os: ubuntu-24.04
             android: true
@@ -127,7 +116,6 @@ jobs:
             builds: |
               android-x64|is_debug=false target_os="android" target_cpu="x64" android_api_level=26 crashpad_http_transport_impl="socket"
             targets: client handler:crashpad_handler snapshot minidump util
-          # ---- iOS / tvOS: in-process client only (no handler targets exist on iOS); static libs need no signing
           - name: ios-device
             os: macos-15
             builds: |
@@ -156,8 +144,7 @@ jobs:
     name: ${{ matrix.name }}
     env:
       CRASHPAD_COMMIT: ${{ needs.pin.outputs.commit }}
-      # Matrix strings go through env: the GN args carry double quotes that would break a shell
-      # or PowerShell literal if they were pasted into the script body.
+      # The GN args contain double quotes, so they reach the scripts through env, not inline.
       BUILDS: ${{ matrix.builds }}
       TARGETS: ${{ matrix.targets }}
       UNIVERSAL: ${{ matrix.universal }}
@@ -170,11 +157,10 @@ jobs:
         run: |
           {
             echo "runner=${{ matrix.os }}"
+            echo "depot_tools=$DEPOT_TOOLS_COMMIT"
             if [[ "$RUNNER_OS" == "macOS" ]]; then xcodebuild -version | tr '\n' ' '; echo; clang --version | head -1; fi
             if [[ "$RUNNER_OS" == "Linux" ]]; then clang --version | head -1; ldd --version 2>/dev/null | head -1; fi
             if [[ "$RUNNER_OS" == "Windows" ]]; then
-              # Crashpad compiles with its own clang-cl but links against this Visual Studio's STL,
-              # which is what sets the consumer toolset floor.
               echo "msvc=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -property installationVersion)"
             fi
             if [[ "${{ matrix.android }}" == "true" ]]; then echo "ndk=$(sed -n 's/^Pkg.Revision *= *//p' "$ANDROID_NDK_LATEST_HOME/source.properties")"; fi
@@ -206,7 +192,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          # Crashpad's DEPS pins the clang-cl it builds with; it only exists after the checkout.
+          # After the build: DEPS only exists once Crashpad is checked out.
           rev=$(grep -o "clang-llvmorg-[^/'\"]*" "$GITHUB_WORKSPACE/work/crashpad/DEPS" | head -1 | sed 's/\.tar\.xz$//' || true)
           [ -n "$rev" ] || echo "::warning::clang-cl revision not found in Crashpad's DEPS"
           echo "clang-cl=$rev" | tee -a toolchain.txt
@@ -234,12 +220,11 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # Verifies every tarball and writes crashpad.lock on every run, with the read-only token.
   lock:
     needs: [pin, build]
     runs-on: ubuntu-24.04
     env:
-      TAG: crashpad-${{ needs.pin.outputs.short }}
+      TAG: ${{ needs.pin.outputs.tag }}
       COMMIT: ${{ needs.pin.outputs.commit }}
     steps:
       - uses: actions/download-artifact@v4
@@ -252,7 +237,7 @@ jobs:
         run: |
           cd artifacts
           sha256sum -c -- *.sha256
-          base="https://github.com/${{ github.repository }}/releases/download/$TAG"
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
           python3 - "$COMMIT" "$TAG" "$base" <<'PY'
           import json, sys, glob, os
           commit, tag, base = sys.argv[1:4]
@@ -273,7 +258,6 @@ jobs:
           name: crashpad.lock
           path: artifacts/crashpad.lock
 
-  # The only job with a write token, and it never runs for pull requests.
   publish:
     needs: [pin, lock]
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true'
@@ -281,7 +265,7 @@ jobs:
     permissions:
       contents: write
     env:
-      TAG: crashpad-${{ needs.pin.outputs.short }}
+      TAG: ${{ needs.pin.outputs.tag }}
       COMMIT: ${{ needs.pin.outputs.commit }}
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -295,8 +279,10 @@ jobs:
         run: |
           cd artifacts
           sha256sum -c -- *.sha256
-          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            gh release delete "$TAG" --repo "${{ github.repository }}" --cleanup-tag --yes
+          # crashpad.lock pins these URLs and checksums, so a published release is never replaced.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::$TAG is already published"
+            exit 1
           fi
           {
             echo "Crashpad prebuilt libraries at commit \`$COMMIT\`, built by workflow run ${{ github.run_id }}."
@@ -307,6 +293,6 @@ jobs:
             echo "| artifact | sha256 |"; echo "|---|---|"
             for f in *.tar.xz; do echo "| $f | $(cut -d' ' -f1 "$f.sha256") |"; done
           } > notes.md
-          gh release create "$TAG" --repo "${{ github.repository }}" --target "$GITHUB_SHA" --prerelease \
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
             --title "Crashpad $TAG" --notes-file notes.md *.tar.xz *.sha256 crashpad.lock
-          echo "https://github.com/${{ github.repository }}/releases/tag/$TAG"
+          echo "https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
