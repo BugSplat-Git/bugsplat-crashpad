@@ -1,22 +1,9 @@
 #!/usr/bin/env bash
-# Package one Crashpad build as a sha256-pinned tarball that bugsplat-native's
-# cmake/Crashpad.cmake consumes without a GN checkout.
+# Packages one Crashpad build as crashpad-<commit7>-<platform-arch>.tar.xz plus its .sha256. The
+# tarball mirrors a Crashpad checkout (headers, out/release/{obj,gen}, PREBUILT.json, licenses) so
+# bugsplat-native builds against a prebuilt and a GN build the same way.
 #
 #   package.sh <crashpad-root> <out-name> <platform-arch> <dest-dir> [metadata-json]
-#
-# Layout inside the tarball mirrors the checkout so the CMake glue is identical for a GN build
-# and a prebuilt:
-#
-#   crashpad/
-#     client/ util/ snapshot/ minidump/ handler/ tools/ compat/ build/     headers only, plus
-#     third_party/mini_chromium/mini_chromium/{base,build}/               handler/win/wer/crashpad_wer.cc
-#     third_party/lss/lss/                                                (BugSplatWer.dll compiles it)
-#     out/release/obj/**                                                  static libs + tool_support object
-#     out/release/gen/**                                                  generated headers
-#     out/release/{crashpad_handler,crashpad_wer.dll}                     reference binaries, when built
-#     PREBUILT.json                                                       commit, platform, toolchain, gn args
-#     LICENSE, third_party_licenses/<component>/                         Crashpad's license, then each shipped
-#                                                                         third-party component's
 set -euo pipefail
 
 ROOT=$1; OUT=$2; NAME=$3; DEST=$4; META=${5:-'{}'}
@@ -26,8 +13,7 @@ STAGE=$(mktemp -d)
 PKG="$STAGE/crashpad"
 mkdir -p "$PKG/out/release" "$DEST"
 
-# find | tar | tar keeps the relative tree and works with GNU tar (Linux, Git Bash) and bsdtar
-# (macOS); xargs -I hits BSD xargs' line-length limit on a header list this long.
+# xargs would hit BSD xargs' line-length limit on this many headers.
 copy_tree() {  # copy_tree <src-root> <dest-root> <find expression...>
   local src=$1 dst=$2; shift 2
   mkdir -p "$dst"
@@ -41,14 +27,12 @@ for d in client util snapshot minidump handler tools compat build; do copy_heade
 copy_headers third_party/mini_chromium/mini_chromium/base
 copy_headers third_party/mini_chromium/mini_chromium/build
 copy_headers third_party/lss/lss
-# Sources that consumers compile themselves (tiny source_sets upstream, not libraries).
+# BugSplatWer.dll compiles this itself.
 if [ -f "$ROOT/handler/win/wer/crashpad_wer.cc" ]; then
   mkdir -p "$PKG/handler/win/wer" && cp "$ROOT/handler/win/wer/crashpad_wer.cc" "$PKG/handler/win/wer/"
 fi
 
-# Libraries and the tool_support object, keeping the obj/ tree so paths match a GN build.
 copy_tree "$ROOT/out/$OUT" "$PKG/out/release" obj -type f \( -name '*.a' -o -name '*.lib' -o -name 'tool_support.tool_support.o' -o -name 'tool_support.tool_support.obj' \)
-# Test-only archives are dead weight.
 find "$PKG/out/release/obj" -type f \( -name '*test*' -o -name 'libgtest*' -o -name 'gmock*' -o -name '*fuzzer*' \) -delete
 [ -d "$ROOT/out/$OUT/gen" ] && cp -R "$ROOT/out/$OUT/gen" "$PKG/out/release/gen"
 for bin in crashpad_handler crashpad_handler.exe crashpad_wer.dll crashpad_wer.lib; do
@@ -57,9 +41,8 @@ done
 cp "$ROOT/out/$OUT/args.gn" "$PKG/out/release/args.gn"
 cp "$ROOT/LICENSE" "$PKG/LICENSE"
 
-# Third-party code in the tarball (headers copied above, or static libraries built from it) ships
-# with its license: mini_chromium and lss everywhere, getopt and zlib on Windows. Each component's
-# README.crashpad names its license file; packaging fails if a shipped component has none.
+# Every third-party component shipped as headers or libraries ships with the license file its
+# README.crashpad names.
 THIRD_PARTY=$(for d in "$PKG/third_party" "$PKG/out/release/obj/third_party"; do
   if [ -d "$d" ]; then ls "$d"; fi
 done | sort -u)
@@ -81,7 +64,6 @@ done
 
 # Windows hosts may expose a Store stub named python3 that only prints an install hint.
 PY=python3; python3 -c pass >/dev/null 2>&1 || PY=python
-# Any build-config workaround applied by build.sh shows up here (Crashpad sources are never patched).
 PATCHES=$(git -C "$ROOT/third_party/mini_chromium/mini_chromium" diff --name-only 2>/dev/null | tr '
 ' ' ')
 $PY - "$PKG/PREBUILT.json" "$COMMIT" "$NAME" "$META" "$(cat "$ROOT/out/$OUT/args.gn")" "$PATCHES" <<'PY'
@@ -97,7 +79,8 @@ PY
 TARBALL="crashpad-$SHORT-$NAME.tar.xz"
 # Written through stdout: GNU tar reads a "C:" prefix in -f as a remote host on Windows.
 tar -C "$STAGE" -cJf - crashpad > "$DEST/$TARBALL"
-(cd "$DEST" && sha256sum "$TARBALL" > "$TARBALL.sha256")
+if command -v sha256sum >/dev/null 2>&1; then SHA256=(sha256sum); else SHA256=(shasum -a 256); fi
+(cd "$DEST" && "${SHA256[@]}" "$TARBALL" > "$TARBALL.sha256")
 echo "packaged $DEST/$TARBALL"
 cat "$DEST/$TARBALL.sha256"
 du -h "$DEST/$TARBALL"

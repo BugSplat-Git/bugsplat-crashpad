@@ -62,5 +62,26 @@ elif ! grep -q "third_party/zlib is shipped but has no license file" "$WORK/miss
   cat "$WORK/missing.log"; fail "unexpected error for a missing license"
 fi
 
+# Checksums with shasum where sha256sum is missing, as on stock macOS.
+if command -v shasum >/dev/null 2>&1; then
+  ROOT="$WORK/shasum/crashpad"
+  fake_checkout "$ROOT"
+  mkdir -p "$WORK/shasum/bin"
+  IFS=: read -ra dirs <<< "$PATH"
+  for d in "${dirs[@]}"; do
+    for exe in "$d"/*; do
+      name=$(basename "$exe")
+      if [ -x "$exe" ] && [ "$name" != sha256sum ] && [ ! -e "$WORK/shasum/bin/$name" ]; then
+        ln -s "$exe" "$WORK/shasum/bin/$name"
+      fi
+    done
+  done
+  if PATH="$WORK/shasum/bin" bash "$HERE/package.sh" "$ROOT" test fake "$WORK/shasum/dist" > "$WORK/shasum.log" 2>&1; then
+    (cd "$WORK/shasum/dist" && shasum -a 256 -c -- *.sha256 > /dev/null) || fail "shasum checksum does not verify"
+  else
+    cat "$WORK/shasum.log"; fail "package.sh failed without sha256sum"
+  fi
+fi
+
 if [ "$FAILED" -ne 0 ]; then exit 1; fi
 echo "package.sh tests passed"
