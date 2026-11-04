@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "commit": "db44314646cbd0825a73b58dd2b7b5f4faca64a7",
+  "release": "crashpad-db44314",
+  "baseUrl": "https://github.com/BugSplat-Git/bugsplat-crashpad/releases/download/crashpad-db44314",
+  "artifacts": {
+    "android-arm64-v8a": {
+      "file": "crashpad-db44314-android-arm64-v8a.tar.xz",
+      "sha256": "b3ce64d67165a93677049c90bfac8ff78377771c89a8b3af48bf8a37b477043b",
+      "size": 758208,
+      "url": "https://github.com/BugSplat-Git/bugsplat-crashpad/releases/download/crashpad-db44314/crashpad-db44314-android-arm64-v8a.tar.xz"
+    },
+    "android-armeabi-v7a": {
+      "file": "crashpad-db44314-android-armeabi-v7a.tar.xz",
+      "sha256": "871aa4c29a8fd957ffc9d5b68f6ca79841f434e6bc09335f200e6507eb9241af",
+      "size": 799192,
+      "url": "https://github.com/BugSplat-Git/bugsplat-crashpad/releases/download/crashpad-db44314/crashpad-db44314-android-armeabi-v7a.tar.xz"
+    },
+    "android-x86_64": {
+      "file": "crashpad-db44314-android-x86_64.tar.xz",
+      "sha256": "ea8bfdb5d75d96fc6351def1fc22fa06e4c25e6d5b469731980d1d57e40ff7a5",
+      "size": 770996,
+      "url": "https://github.com/BugSplat-Git/bugsplat-crashpad/releases/download/crashpad-db44314/crashpad-db44314-android-x86_64.tar.xz"
+    },
+    "ios-device": {
+      "file": "crashpad-db44314-ios-device.tar.xz",
+      "sha256": "90b9c857b3d32fa7b5f0dc38727bce6fc473a0a0e64c2ee92c1962e08dea6c31",
+      "size": 655360,
+      "url": "https://github.com/BugSplat-Git/bugsplat-crashpad/releases/download/crashpad-db44314/crashpad-db44314-ios-device.tar.xz"
+    },
+    "ios-simulator": {
+      "file": "crashpad-db44314-ios-simulator.tar.xz",
+      "sha256": "94a9a7a88e20b9c7c387dcd4efdbbc28d2d329fb936a99ff1436490a24dd2c62",
+      "size": 911360,
+      "url": "https://github.com/BugSplat-Git/bugsplat-crashpad/releases/download/crashpad-db44314/crashpad-db44314-ios-simulator.tar.xz"
+    },
+    "linux-aarch64": {
+      "file": "crashpad-db44314-linux-aarch64.tar.xz",
+      "sha256": "c6ac07f7fc9d5c7b455517322c19796ab1184bbb9a5eaff01a68977a0ea9ea61",
+      "size": 749348,
+      "url": "https://github.com/BugSplat-Git/bugsplat-crashpad/releases/download/crashpad-db44314/crashpad-db44314-linux-aarch64.tar.xz"
+    },
+    "linux-x86_64": {
+      "file": "crashpad-db44314-linux-x86_64.tar.xz",
+      "sha256": "2dbf1ec4577ce01759b49c624c0af09a0233a82e248a2ad4870673199bea0e0a",
+      "size": 743368,
+      "url": "https://github.com/BugSplat-Git/bugsplat-crashpad/releases/download/crashpad-db44314/crashpad-db44314-linux-x86_64.tar.xz"
+    },
+    "macos-universal": {
+      "file": "crashpad-db44314-macos-universal.tar.xz",
+      "sha256": "36e61d76af1242871491f31dcefe27e420026868dac2f8faf52cb1a61727e2c6",
+      "size": 1105920,
+      "url": "https://github.com/BugSplat-Git/bugsplat-crashpad/releases/download/crashpad-db44314/crashpad-db44314-macos-universal.tar.xz"
+    },
+    "tvos-device": {
+      "file": "crashpad-db44314-tvos-device.tar.xz",
+      "sha256": "90ecb3a4f2fee0b623aa2625e962338cee05165dcc375132a44f01b9f330dc76",
+      "size": 624640,
+      "url": "https://github.com/BugSplat-Git/bugsplat-crashpad/releases/download/crashpad-db44314/crashpad-db44314-tvos-device.tar.xz"
+    },
+    "tvos-simulator": {
+      "file": "crashpad-db44314-tvos-simulator.tar.xz",
+      "sha256": "624ebde76303f0cbada1c3dafc31404a8ce3b04831f0975dd73f115ab4716ada",
+      "size": 860160,
+      "url": "https://github.com/BugSplat-Git/bugsplat-crashpad/releases/download/crashpad-db44314/crashpad-db44314-tvos-simulator.tar.xz"
+    },
+    "windows-arm64": {
+      "file": "crashpad-db44314-windows-arm64.tar.xz",
+      "sha256": "df780c9c0e01a7550663a6f63721b825681af8c1bf2e4a06eea51fc7f435fd73",
+      "size": 2665592,
+      "url": "https://github.com/BugSplat-Git/bugsplat-crashpad/releases/download/crashpad-db44314/crashpad-db44314-windows-arm64.tar.xz"
+    },
+    "windows-x64": {
+      "file": "crashpad-db44314-windows-x64.tar.xz",
+      "sha256": "21d90472abeb8ac4595fd4af55b113930c95bb231dc887d0948099ab1ac1970c",
+      "size": 2810232,
+      "url": "https://github.com/BugSplat-Git/bugsplat-crashpad/releases/download/crashpad-db44314/crashpad-db44314-windows-x64.tar.xz"
+    },
+    "windows-x86": {
+      "file": "crashpad-db44314-windows-x86.tar.xz",
+      "sha256": "19b3f67a55ba5dbf1dba89de44307c430661afe42d46c25cf6756694b7f33741",
+      "size": 2764396,
+      "url": "https://github.com/BugSplat-Git/bugsplat-crashpad/releases/download/crashpad-db44314/crashpad-db44314-windows-x86.tar.xz"
+    }
+  }
+}
