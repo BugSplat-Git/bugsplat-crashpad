@@ -21,6 +21,11 @@ as a GitHub pre-release tagged `crashpad-<commit7>-<run number>`. A published re
 replaced: rebuilding the same commit publishes a new tag, and `crashpad.lock` keeps pointing at the
 old one until it is bumped.
 
+This is separate from `.github/workflows/monthly.yml`, which builds the latest Crashpad for Windows,
+macOS and Linux (debug and release) on the 1st of every month and publishes it as the repo's
+*Latest* release. BugSplat's [Crashpad docs](https://docs.bugsplat.com/integrations/desktop/crashpad)
+send customers to those releases.
+
 | artifact | runner / toolchain | notes |
 |---|---|---|
 | `windows-x64`, `windows-x86`, `windows-arm64` | windows-2022, Crashpad's clang-cl against the runner's MSVC STL, `/MD` | consumers need MSVC toolset >= 14.44; includes `crashpad_wer` and the WER helper source |
