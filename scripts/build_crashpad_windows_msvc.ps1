@@ -17,6 +17,16 @@ if (-not (Test-Path "crashpad")) {
     gclient sync
 }
 
+# CRASHPAD_COMMIT pins the build to one commit (the monthly workflow builds every platform from
+# the same one). Unset, the build uses the head of main.
+if ($env:CRASHPAD_COMMIT) {
+    Write-Host "Checking out Crashpad $env:CRASHPAD_COMMIT..."
+    git checkout -q $env:CRASHPAD_COMMIT
+    if ($LASTEXITCODE -ne 0) { throw "git checkout $env:CRASHPAD_COMMIT failed" }
+    gclient sync
+    if ($LASTEXITCODE -ne 0) { throw "gclient sync failed" }
+}
+
 # Generate build files with GN for Debug configuration
 Write-Host "Generating Debug build files with GN..."
 gn gen out/win-debug --args="extra_cflags=\`"/MDd\`" is_debug=true" 

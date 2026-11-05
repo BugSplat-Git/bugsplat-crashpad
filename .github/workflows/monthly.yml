@@ -10,7 +10,33 @@ permissions:
   contents: read
 
 jobs:
+  # Resolve Crashpad's main once, so every platform builds the same commit and the release is
+  # named after the commit that was built.
+  pin:
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.pin.outputs.commit }}
+      version: ${{ steps.pin.outputs.version }}
+    steps:
+      - id: pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          url=https://chromium.googlesource.com/crashpad/crashpad
+          commit=$(git ls-remote "$url" refs/heads/main | cut -f1)
+          if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::could not resolve Crashpad main (got '$commit')"
+            exit 1
+          fi
+          git init -q crashpad
+          git -C crashpad fetch -q --depth 1 "$url" "$commit"
+          date=$(git -C crashpad show -s --format=%cs FETCH_HEAD | tr -d '-')
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "version=v${date}-${commit:0:7}" >> "$GITHUB_OUTPUT"
+          echo "Building Crashpad $commit (v${date}-${commit:0:7})"
+
   build-crashpad:
+    needs: pin
     strategy:
       matrix:
         include:
@@ -79,12 +105,16 @@ jobs:
       - name: Run build script (Windows)
         if: ${{ matrix.platform == 'windows' }}
         shell: pwsh
+        env:
+          CRASHPAD_COMMIT: ${{ needs.pin.outputs.commit }}
         run: |
           ${{ matrix.script }}
 
       - name: Run build script (Unix)
         if: ${{ matrix.platform != 'windows' }}
         shell: bash
+        env:
+          CRASHPAD_COMMIT: ${{ needs.pin.outputs.commit }}
         run: |
           chmod +x ${{ matrix.script }}
           ${{ matrix.script }}
@@ -123,12 +153,15 @@ jobs:
             cp "$DEBUG_OUT_DIR/obj/util/util.lib" artifacts/${{ matrix.platform }}/debug/lib/
             cp "$DEBUG_OUT_DIR/obj/third_party/mini_chromium/mini_chromium/base/base.lib" artifacts/${{ matrix.platform }}/debug/lib/
             cp "$DEBUG_OUT_DIR/crashpad_handler.exe" artifacts/${{ matrix.platform }}/debug/bin/
+            # The handler loads it for Windows Error Reporting (fail-fast) crashes.
+            cp "$DEBUG_OUT_DIR/crashpad_wer.dll" artifacts/${{ matrix.platform }}/debug/bin/
             # Windows release libraries
             cp "$RELEASE_OUT_DIR/obj/client/client.lib" artifacts/${{ matrix.platform }}/release/lib/
             cp "$RELEASE_OUT_DIR/obj/client/common.lib" artifacts/${{ matrix.platform }}/release/lib/
             cp "$RELEASE_OUT_DIR/obj/util/util.lib" artifacts/${{ matrix.platform }}/release/lib/
             cp "$RELEASE_OUT_DIR/obj/third_party/mini_chromium/mini_chromium/base/base.lib" artifacts/${{ matrix.platform }}/release/lib/
             cp "$RELEASE_OUT_DIR/crashpad_handler.exe" artifacts/${{ matrix.platform }}/release/bin/
+            cp "$RELEASE_OUT_DIR/crashpad_wer.dll" artifacts/${{ matrix.platform }}/release/bin/
           elif [ "${{ matrix.platform }}" == "macos" ]; then
             # macOS debug libraries
             cp "$DEBUG_OUT_DIR/obj/client/libclient.a" artifacts/${{ matrix.platform }}/debug/lib/
@@ -181,7 +214,8 @@ jobs:
           echo "Build Date: $(date)" > artifacts/${{ matrix.platform }}/build_info.txt
           echo "Platform: ${{ matrix.platform }}" >> artifacts/${{ matrix.platform }}/build_info.txt
           echo "OS: ${{ matrix.os }}" >> artifacts/${{ matrix.platform }}/build_info.txt
-          echo "Commit: ${{ github.sha }}" >> artifacts/${{ matrix.platform }}/build_info.txt
+          echo "Crashpad Commit: ${{ needs.pin.outputs.commit }}" >> artifacts/${{ matrix.platform }}/build_info.txt
+          echo "Workflow Commit: ${{ github.sha }}" >> artifacts/${{ matrix.platform }}/build_info.txt
           echo "Configurations: Debug, Release" >> artifacts/${{ matrix.platform }}/build_info.txt
 
       - name: Upload artifacts
@@ -192,7 +226,7 @@ jobs:
           retention-days: 90
 
   create-release:
-    needs: build-crashpad
+    needs: [pin, build-crashpad]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -208,28 +242,18 @@ jobs:
         with:
           path: release-artifacts
 
-      - name: Get Crashpad version
-        id: crashpad-version
-        run: |
-          # We need to fetch Crashpad to get its version info
-          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-          export PATH="$PWD/depot_tools:$PATH"
-          mkdir -p temp-crashpad && cd temp-crashpad
-          fetch --no-history crashpad
-          cd crashpad
-          CRASHPAD_COMMIT=$(git rev-parse --short HEAD)
-          CRASHPAD_DATE=$(git show -s --format=%ci HEAD | cut -d' ' -f1 | tr -d '-')
-          echo "version=v${CRASHPAD_DATE}-${CRASHPAD_COMMIT}" >> $GITHUB_OUTPUT
-          echo "commit=${CRASHPAD_COMMIT}" >> $GITHUB_OUTPUT
-          echo "date=${CRASHPAD_DATE}" >> $GITHUB_OUTPUT
-          cd ../..
-
       - name: Create release archives and checksums
         run: |
           cd release-artifacts
+          # Artifact upload and download drop file modes; the handlers must stay executable.
+          for handler in crashpad-*/*/bin/crashpad_handler; do
+            [ -e "$handler" ] || continue
+            chmod +x "$handler"
+            test -x "$handler"
+          done
           for dir in crashpad-*; do
             platform=$(echo $dir | sed 's/crashpad-\(.*\)-[0-9]*/\1/')
-            archive="crashpad-${platform}-${{ steps.crashpad-version.outputs.version }}.tar.gz"
+            archive="crashpad-${platform}-${{ needs.pin.outputs.version }}.tar.gz"
             tar -czf "../${archive}" -C "$dir" .
             # Generate checksum
             cd ..
@@ -246,10 +270,10 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ steps.crashpad-version.outputs.version }}
-          name: Crashpad Build ${{ steps.crashpad-version.outputs.version }}
+          tag_name: ${{ needs.pin.outputs.version }}
+          name: Crashpad Build ${{ needs.pin.outputs.version }}
           body: |
-            ## Crashpad Libraries - ${{ steps.crashpad-version.outputs.version }}
+            ## Crashpad Libraries - ${{ needs.pin.outputs.version }}
             
             Ready-to-use Crashpad libraries for all platforms, built from the latest Crashpad source.
             
@@ -298,7 +322,7 @@ jobs:
             ---
             **Build Details:**
             - **Build Date**: ${{ steps.current-date.outputs.date }}
-            - **Crashpad Commit**: ${{ steps.crashpad-version.outputs.commit }}
+            - **Crashpad Commit**: ${{ needs.pin.outputs.commit }}
             - **Source Repository**: https://github.com/${{ github.repository }}
             - **Workflow Run**: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
           files: |
