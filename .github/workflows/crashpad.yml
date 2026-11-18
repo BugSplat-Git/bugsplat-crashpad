@@ -155,6 +155,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Ubuntu 22.04's clang is 14, which doesn't know -std=c++23 (Crashpad's GN build uses it).
+      # LLVM's own packages give clang 18, as 24.04 had, while the libraries still link against
+      # 22.04's glibc 2.35.
+      - name: Install clang 18 (Linux)
+        if: runner.os == 'Linux' && matrix.android != true
+        shell: bash
+        run: |
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          sudo bash /tmp/llvm.sh 18
+          mkdir -p "$RUNNER_TEMP/clang-18"
+          for tool in clang clang++ ld.lld llvm-ar llvm-nm llvm-objcopy; do
+            [ -x "/usr/bin/$tool-18" ] && ln -sf "/usr/bin/$tool-18" "$RUNNER_TEMP/clang-18/$tool"
+          done
+          echo "$RUNNER_TEMP/clang-18" >> "$GITHUB_PATH"
+
       - name: Toolchain versions
         shell: bash
         run: |
