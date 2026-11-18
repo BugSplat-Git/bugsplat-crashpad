@@ -87,13 +87,16 @@ jobs:
               mac-x64|is_debug=false target_cpu="x64" mac_deployment_target="12.0"
             universal: mac-arm64 mac-x64
             targets: client handler:crashpad_handler snapshot minidump util
+          # Ubuntu 22.04, not 24.04: the libraries and crashpad_handler link against the runner's
+          # glibc, and 24.04's (2.39) left apps that use them unable to build or run on glibc
+          # older than 2.38 (#23). 22.04 makes the floor glibc 2.35: Debian 12, Ubuntu 22.04.
           - name: linux-x86_64
-            os: ubuntu-24.04
+            os: ubuntu-22.04
             builds: |
               linux-x64|is_debug=false crashpad_http_transport_impl="socket"
             targets: client handler:crashpad_handler snapshot minidump util
           - name: linux-aarch64
-            os: ubuntu-24.04-arm
+            os: ubuntu-22.04-arm
             builds: |
               linux-arm64|is_debug=false target_cpu="arm64" crashpad_http_transport_impl="socket"
             targets: client handler:crashpad_handler snapshot minidump util
@@ -196,6 +199,26 @@ jobs:
           rev=$(grep -o "clang-llvmorg-[^/'\"]*" "$GITHUB_WORKSPACE/work/crashpad/DEPS" | head -1 | sed 's/\.tar\.xz$//' || true)
           [ -n "$rev" ] || echo "::warning::clang-cl revision not found in Crashpad's DEPS"
           echo "clang-cl=$rev" | tee -a toolchain.txt
+
+      - name: Check the glibc floor (Linux)
+        if: runner.os == 'Linux' && matrix.android != true
+        shell: bash
+        env:
+          MAX_GLIBC: "2.35"
+        run: |
+          out="$GITHUB_WORKSPACE/work/crashpad/out/$(head -1 <<< "$BUILDS" | cut -d'|' -f1)"
+          need=$(objdump -T "$out/crashpad_handler" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -1)
+          echo "crashpad_handler needs glibc $need (floor: $MAX_GLIBC)"
+          if [ "$(printf '%s\n%s\n' "$MAX_GLIBC" "$need" | sort -V | tail -1)" != "$MAX_GLIBC" ]; then
+            echo "::error::crashpad_handler needs glibc $need, newer than the $MAX_GLIBC floor"
+            exit 1
+          fi
+          # glibc 2.38's C23 functions, which the libraries picked up on a newer runner.
+          if find "$out/obj" -name '*.a' -exec nm -u {} + 2>/dev/null | grep -q '__isoc23_'; then
+            echo "::error::the static libraries reference glibc 2.38's __isoc23_ functions"
+            exit 1
+          fi
+          echo "glibc=$need" >> toolchain.txt
 
       - name: Universal (lipo)
         if: matrix.universal != ''

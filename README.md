@@ -30,7 +30,7 @@ send customers to those releases.
 |---|---|---|
 | `windows-x64`, `windows-x86`, `windows-arm64` | windows-2022, Crashpad's clang-cl against the runner's MSVC STL, `/MD` | consumers need MSVC toolset >= 14.44; includes `crashpad_wer` and the WER helper source |
 | `macos-universal` | macos-15 / Xcode 16, arm64 + x86_64 lipo'd | `mac_deployment_target=12.0` (the floor: `kIOMainPortDefault`) |
-| `linux-x86_64`, `linux-aarch64` | ubuntu-24.04 / ubuntu-24.04-arm, clang 18 | `crashpad_http_transport_impl=socket`, no libcurl |
+| `linux-x86_64`, `linux-aarch64` | ubuntu-22.04 / ubuntu-22.04-arm, the image's clang | `crashpad_http_transport_impl=socket`, no libcurl; built against glibc 2.35, so apps that use them build and run on glibc 2.35 and newer (Debian 12, Ubuntu 22.04). CI fails a build that needs a newer glibc |
 | `android-arm64-v8a`, `android-armeabi-v7a`, `android-x86_64` | ubuntu-24.04, the image's NDK (recorded in `PREBUILT.json`) | `android_api_level=26`; 32-bit ARM needs a one-line GN `not_needed()` workaround that `scripts/farm/build.sh` applies and `PREBUILT.json` records |
 | `ios-device`, `ios-simulator`, `tvos-device`, `tvos-simulator` | macos-15 / Xcode 16; simulators are arm64 + x86_64 | in-process client libraries only, `ios_deployment_target=14.0` |
 
