@@ -24,7 +24,8 @@ old one until it is bumped.
 This is separate from `.github/workflows/monthly.yml`, which builds the latest Crashpad for Windows,
 macOS and Linux (debug and release) on the 1st of every month and publishes it as the repo's
 *Latest* release. BugSplat's [Crashpad docs](https://docs.bugsplat.com/integrations/desktop/crashpad)
-send customers to those releases.
+send customers to those releases. Its Linux build runs on Ubuntu 22.04 with clang 18, like the
+farm's, so it works on glibc 2.35 and newer (Debian 12, Ubuntu 22.04).
 
 | artifact | runner / toolchain | notes |
 |---|---|---|

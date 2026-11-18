@@ -48,7 +48,10 @@ jobs:
             platform: macos
             script: scripts/build_crashpad_macos.sh
             artifact_path: third_party/crashpad/out/macos-debug
-          - os: ubuntu-latest
+          # Ubuntu 22.04, not latest: the libraries and crashpad_handler link against the runner's
+          # glibc, so this sets the oldest Linux they work on (glibc 2.35: Debian 12, Ubuntu
+          # 22.04). See #23 and crashpad.yml.
+          - os: ubuntu-22.04
             platform: linux
             script: scripts/build_crashpad_linux.sh
             artifact_path: third_party/crashpad/out/linux-debug
@@ -94,6 +97,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libcurl4-openssl-dev
+          # 22.04's clang is 14, which doesn't know -std=c++23 (Crashpad's GN build uses it).
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          sudo bash /tmp/llvm.sh 18
+          mkdir -p "$RUNNER_TEMP/clang-18"
+          for tool in clang clang++ ld.lld llvm-ar llvm-nm llvm-objcopy; do
+            [ -x "/usr/bin/$tool-18" ] && ln -sf "/usr/bin/$tool-18" "$RUNNER_TEMP/clang-18/$tool"
+          done
+          echo "$RUNNER_TEMP/clang-18" >> "$GITHUB_PATH"
 
       - name: Install build dependencies (macOS)
         if: ${{ matrix.platform == 'macos' }}
@@ -118,6 +129,25 @@ jobs:
         run: |
           chmod +x ${{ matrix.script }}
           ${{ matrix.script }}
+
+      - name: Check the glibc floor (Linux)
+        if: ${{ matrix.platform == 'linux' }}
+        shell: bash
+        env:
+          MAX_GLIBC: "2.35"
+        run: |
+          for out in third_party/crashpad/out/linux-debug third_party/crashpad/out/linux-release; do
+            need=$(objdump -T "$out/crashpad_handler" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -1)
+            echo "$out/crashpad_handler needs glibc $need (floor: $MAX_GLIBC)"
+            if [ "$(printf '%s\n%s\n' "$MAX_GLIBC" "$need" | sort -V | tail -1)" != "$MAX_GLIBC" ]; then
+              echo "::error::$out/crashpad_handler needs glibc $need, newer than the $MAX_GLIBC floor"
+              exit 1
+            fi
+            if find "$out/obj" -name '*.a' -exec nm -u {} + 2>/dev/null | grep -q '__isoc23_'; then
+              echo "::error::$out's static libraries reference glibc 2.38's __isoc23_ functions"
+              exit 1
+            fi
+          done
 
       - name: Prepare artifacts
         shell: bash
