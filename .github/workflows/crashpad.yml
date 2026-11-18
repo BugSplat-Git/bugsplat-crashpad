@@ -87,13 +87,16 @@ jobs:
               mac-x64|is_debug=false target_cpu="x64" mac_deployment_target="12.0"
             universal: mac-arm64 mac-x64
             targets: client handler:crashpad_handler snapshot minidump util
+          # Ubuntu 22.04, not 24.04: the libraries and crashpad_handler link against the runner's
+          # glibc, and 24.04's (2.39) left apps that use them unable to build or run on glibc
+          # older than 2.38 (#23). 22.04 makes the floor glibc 2.35: Debian 12, Ubuntu 22.04.
           - name: linux-x86_64
-            os: ubuntu-24.04
+            os: ubuntu-22.04
             builds: |
               linux-x64|is_debug=false crashpad_http_transport_impl="socket"
             targets: client handler:crashpad_handler snapshot minidump util
           - name: linux-aarch64
-            os: ubuntu-24.04-arm
+            os: ubuntu-22.04-arm
             builds: |
               linux-arm64|is_debug=false target_cpu="arm64" crashpad_http_transport_impl="socket"
             targets: client handler:crashpad_handler snapshot minidump util
@@ -152,6 +155,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Ubuntu 22.04's clang is 14, which doesn't know -std=c++23 (Crashpad's GN build uses it).
+      # LLVM's own packages give clang 18, as 24.04 had, while the libraries still link against
+      # 22.04's glibc 2.35.
+      - name: Install clang 18 (Linux)
+        if: runner.os == 'Linux' && matrix.android != true
+        shell: bash
+        run: |
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          sudo bash /tmp/llvm.sh 18
+          mkdir -p "$RUNNER_TEMP/clang-18"
+          for tool in clang clang++ ld.lld llvm-ar llvm-nm llvm-objcopy; do
+            [ -x "/usr/bin/$tool-18" ] && ln -sf "/usr/bin/$tool-18" "$RUNNER_TEMP/clang-18/$tool"
+          done
+          echo "$RUNNER_TEMP/clang-18" >> "$GITHUB_PATH"
+
       - name: Toolchain versions
         shell: bash
         run: |
@@ -196,6 +214,35 @@ jobs:
           rev=$(grep -o "clang-llvmorg-[^/'\"]*" "$GITHUB_WORKSPACE/work/crashpad/DEPS" | head -1 | sed 's/\.tar\.xz$//' || true)
           [ -n "$rev" ] || echo "::warning::clang-cl revision not found in Crashpad's DEPS"
           echo "clang-cl=$rev" | tee -a toolchain.txt
+
+      - name: Check the glibc floor (Linux)
+        if: runner.os == 'Linux' && matrix.android != true
+        shell: bash
+        env:
+          MAX_GLIBC: "2.35"
+        run: |
+          newer() { [ "$(printf '%s\n%s\n' "$MAX_GLIBC" "$1" | sort -V | tail -1)" != "$MAX_GLIBC" ]; }
+          # The static libraries carry unversioned references, bound only when an app links them,
+          # so they're checked through the glibc they were compiled against: its headers declare
+          # nothing newer than itself, so no library can reference a newer symbol.
+          built=$(getconf GNU_LIBC_VERSION | awk '{print $2}')
+          echo "built against glibc $built (floor: $MAX_GLIBC)"
+          [ -n "$built" ] || { echo "::error::could not read the runner's glibc version"; exit 1; }
+          if newer "$built"; then
+            echo "::error::built against glibc $built, newer than the $MAX_GLIBC floor"
+            exit 1
+          fi
+          # crashpad_handler is linked here, so its versioned references are exact.
+          out="$GITHUB_WORKSPACE/work/crashpad/out/$(head -1 <<< "$BUILDS" | cut -d'|' -f1)"
+          symbols=$(objdump -T "$out/crashpad_handler")
+          need=$(grep -o 'GLIBC_[0-9.]*' <<< "$symbols" | sed 's/GLIBC_//' | sort -V | tail -1)
+          [ -n "$need" ] || { echo "::error::no glibc version references in crashpad_handler"; exit 1; }
+          echo "crashpad_handler needs glibc $need"
+          if newer "$need"; then
+            echo "::error::crashpad_handler needs glibc $need, newer than the $MAX_GLIBC floor"
+            exit 1
+          fi
+          echo "glibc=$built (crashpad_handler needs $need)" >> toolchain.txt
 
       - name: Universal (lipo)
         if: matrix.universal != ''

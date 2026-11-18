@@ -48,7 +48,10 @@ jobs:
             platform: macos
             script: scripts/build_crashpad_macos.sh
             artifact_path: third_party/crashpad/out/macos-debug
-          - os: ubuntu-latest
+          # Ubuntu 22.04, not latest: the libraries and crashpad_handler link against the runner's
+          # glibc, so this sets the oldest Linux they work on (glibc 2.35: Debian 12, Ubuntu
+          # 22.04). See #23 and crashpad.yml.
+          - os: ubuntu-22.04
             platform: linux
             script: scripts/build_crashpad_linux.sh
             artifact_path: third_party/crashpad/out/linux-debug
@@ -94,6 +97,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libcurl4-openssl-dev
+          # 22.04's clang is 14, which doesn't know -std=c++23 (Crashpad's GN build uses it).
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          sudo bash /tmp/llvm.sh 18
+          mkdir -p "$RUNNER_TEMP/clang-18"
+          for tool in clang clang++ ld.lld llvm-ar llvm-nm llvm-objcopy; do
+            [ -x "/usr/bin/$tool-18" ] && ln -sf "/usr/bin/$tool-18" "$RUNNER_TEMP/clang-18/$tool"
+          done
+          echo "$RUNNER_TEMP/clang-18" >> "$GITHUB_PATH"
 
       - name: Install build dependencies (macOS)
         if: ${{ matrix.platform == 'macos' }}
@@ -118,6 +129,34 @@ jobs:
         run: |
           chmod +x ${{ matrix.script }}
           ${{ matrix.script }}
+
+      - name: Check the glibc floor (Linux)
+        if: ${{ matrix.platform == 'linux' }}
+        shell: bash
+        env:
+          MAX_GLIBC: "2.35"
+        run: |
+          newer() { [ "$(printf '%s\n%s\n' "$MAX_GLIBC" "$1" | sort -V | tail -1)" != "$MAX_GLIBC" ]; }
+          # The static libraries are checked through the glibc they were compiled against (its
+          # headers declare nothing newer than itself); crashpad_handler through its own versioned
+          # references. Same check as crashpad.yml.
+          built=$(getconf GNU_LIBC_VERSION | awk '{print $2}')
+          echo "built against glibc $built (floor: $MAX_GLIBC)"
+          [ -n "$built" ] || { echo "::error::could not read the runner's glibc version"; exit 1; }
+          if newer "$built"; then
+            echo "::error::built against glibc $built, newer than the $MAX_GLIBC floor"
+            exit 1
+          fi
+          for out in third_party/crashpad/out/linux-debug third_party/crashpad/out/linux-release; do
+            symbols=$(objdump -T "$out/crashpad_handler")
+            need=$(grep -o 'GLIBC_[0-9.]*' <<< "$symbols" | sed 's/GLIBC_//' | sort -V | tail -1)
+            [ -n "$need" ] || { echo "::error::no glibc version references in $out/crashpad_handler"; exit 1; }
+            echo "$out/crashpad_handler needs glibc $need"
+            if newer "$need"; then
+              echo "::error::$out/crashpad_handler needs glibc $need, newer than the $MAX_GLIBC floor"
+              exit 1
+            fi
+          done
 
       - name: Prepare artifacts
         shell: bash
