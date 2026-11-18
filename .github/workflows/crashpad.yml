@@ -221,19 +221,28 @@ jobs:
         env:
           MAX_GLIBC: "2.35"
         run: |
+          newer() { [ "$(printf '%s\n%s\n' "$MAX_GLIBC" "$1" | sort -V | tail -1)" != "$MAX_GLIBC" ]; }
+          # The static libraries carry unversioned references, bound only when an app links them,
+          # so they're checked through the glibc they were compiled against: its headers declare
+          # nothing newer than itself, so no library can reference a newer symbol.
+          built=$(getconf GNU_LIBC_VERSION | awk '{print $2}')
+          echo "built against glibc $built (floor: $MAX_GLIBC)"
+          [ -n "$built" ] || { echo "::error::could not read the runner's glibc version"; exit 1; }
+          if newer "$built"; then
+            echo "::error::built against glibc $built, newer than the $MAX_GLIBC floor"
+            exit 1
+          fi
+          # crashpad_handler is linked here, so its versioned references are exact.
           out="$GITHUB_WORKSPACE/work/crashpad/out/$(head -1 <<< "$BUILDS" | cut -d'|' -f1)"
-          need=$(objdump -T "$out/crashpad_handler" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -1)
-          echo "crashpad_handler needs glibc $need (floor: $MAX_GLIBC)"
-          if [ "$(printf '%s\n%s\n' "$MAX_GLIBC" "$need" | sort -V | tail -1)" != "$MAX_GLIBC" ]; then
+          symbols=$(objdump -T "$out/crashpad_handler")
+          need=$(grep -o 'GLIBC_[0-9.]*' <<< "$symbols" | sed 's/GLIBC_//' | sort -V | tail -1)
+          [ -n "$need" ] || { echo "::error::no glibc version references in crashpad_handler"; exit 1; }
+          echo "crashpad_handler needs glibc $need"
+          if newer "$need"; then
             echo "::error::crashpad_handler needs glibc $need, newer than the $MAX_GLIBC floor"
             exit 1
           fi
-          # glibc 2.38's C23 functions, which the libraries picked up on a newer runner.
-          if find "$out/obj" -name '*.a' -exec nm -u {} + 2>/dev/null | grep -q '__isoc23_'; then
-            echo "::error::the static libraries reference glibc 2.38's __isoc23_ functions"
-            exit 1
-          fi
-          echo "glibc=$need" >> toolchain.txt
+          echo "glibc=$built (crashpad_handler needs $need)" >> toolchain.txt
 
       - name: Universal (lipo)
         if: matrix.universal != ''

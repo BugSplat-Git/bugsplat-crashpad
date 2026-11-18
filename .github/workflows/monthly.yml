@@ -136,15 +136,24 @@ jobs:
         env:
           MAX_GLIBC: "2.35"
         run: |
+          newer() { [ "$(printf '%s\n%s\n' "$MAX_GLIBC" "$1" | sort -V | tail -1)" != "$MAX_GLIBC" ]; }
+          # The static libraries are checked through the glibc they were compiled against (its
+          # headers declare nothing newer than itself); crashpad_handler through its own versioned
+          # references. Same check as crashpad.yml.
+          built=$(getconf GNU_LIBC_VERSION | awk '{print $2}')
+          echo "built against glibc $built (floor: $MAX_GLIBC)"
+          [ -n "$built" ] || { echo "::error::could not read the runner's glibc version"; exit 1; }
+          if newer "$built"; then
+            echo "::error::built against glibc $built, newer than the $MAX_GLIBC floor"
+            exit 1
+          fi
           for out in third_party/crashpad/out/linux-debug third_party/crashpad/out/linux-release; do
-            need=$(objdump -T "$out/crashpad_handler" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -1)
-            echo "$out/crashpad_handler needs glibc $need (floor: $MAX_GLIBC)"
-            if [ "$(printf '%s\n%s\n' "$MAX_GLIBC" "$need" | sort -V | tail -1)" != "$MAX_GLIBC" ]; then
+            symbols=$(objdump -T "$out/crashpad_handler")
+            need=$(grep -o 'GLIBC_[0-9.]*' <<< "$symbols" | sed 's/GLIBC_//' | sort -V | tail -1)
+            [ -n "$need" ] || { echo "::error::no glibc version references in $out/crashpad_handler"; exit 1; }
+            echo "$out/crashpad_handler needs glibc $need"
+            if newer "$need"; then
               echo "::error::$out/crashpad_handler needs glibc $need, newer than the $MAX_GLIBC floor"
-              exit 1
-            fi
-            if find "$out/obj" -name '*.a' -exec nm -u {} + 2>/dev/null | grep -q '__isoc23_'; then
-              echo "::error::$out's static libraries reference glibc 2.38's __isoc23_ functions"
               exit 1
             fi
           done
